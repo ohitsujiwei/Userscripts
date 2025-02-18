@@ -1,0 +1,300 @@
+// ==UserScript==
+// @name        Youtube Live Clock Embed (Holodex)
+// @namespace   Violentmonkey Scripts
+// @match       https://holodex.net/*
+// @match       https://www.youtube.com/embed/*
+// @grant       none
+// @version     1.0.0
+// @author      Nekone
+// @description 2024/12/10 下午5:50:3818
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=holodex.net
+// ==/UserScript==
+
+'use strict'
+
+const css = `
+
+.ytp-pause-overlay {
+    display: none;
+}
+
+.ytp-tooltip-text {
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black !important;
+    font-size: 14px !important;
+    line-height: 1.3 !important;
+    white-space: pre-line !important;
+}
+
+.ytp-time-on-control {
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black !important;
+    font-size: 14px !important;
+    line-height: 1.3 !important;
+}
+
+.ytp-time-on-video {
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black !important;
+    font-size: 14px !important;
+    line-height: 1.3 !important;
+    position: absolute !important;
+    color: #FFFFFF !important;
+}
+
+`;
+
+function add_style_youtube() {
+    const style = document.createElement('style');
+    style.setAttribute('id', 'embed');
+    style.textContent = css;
+    document.head.appendChild(style);
+}
+
+let microformat = null;
+let element_on_controller = null;
+let element_on_video = null;
+
+let html5_video_player = null;
+let html5_main_video = null;
+
+function wait_element(selector) {
+    return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+            const e = document.querySelector(selector);
+            if (e) {
+                observer.disconnect();
+                resolve(e);
+            }
+        });
+        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+    });
+}
+
+function create_span(selector) {
+    let element = document.querySelector(`.${selector}`);
+    if (!element) {
+        element = document.createElement('span');
+        element.setAttribute('class', selector);
+    }
+    return element;
+}
+
+function convert_rewind_time(rewind_time) {
+    const [s, m, h] = rewind_time.split(':').reverse().map((e) => Math.abs(Number(e)));
+    const total_seconds = s + (m || 0) * 60 + (h || 0) * 3600;
+    return rewind_time[0] == '-' ? -total_seconds : total_seconds;
+}
+
+function update_tooltip_text() {
+    const ytp_tooltip_text = document.querySelector('.ytp-tooltip-text-wrapper .ytp-tooltip-text');
+    if (ytp_tooltip_text) {
+        const textContent = ytp_tooltip_text.textContent;
+        if (textContent.includes(':') && !['(', ')'].some(e => textContent.includes(e))) {
+            const rewind_time = convert_rewind_time(textContent);
+            const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate;
+            if (rewind_time > 0) {
+                ytp_tooltip_text.textContent = `${textContent} / ${microformat.duration}\n` + Formatter.date(start_date, rewind_time);
+            }
+            else {
+                const secondsFromStart = Math.floor((Date.now() - Date.parse(start_date)) / 1000) + rewind_time;
+                ytp_tooltip_text.textContent = `${Formatter.time(secondsFromStart)} / ${textContent}\n` + Formatter.date(start_date, secondsFromStart);
+            }
+        }
+        else if (['音量', '%'].some(e => textContent.includes(e))) {
+            ytp_tooltip_text.textContent = `${html5_video_player.getVolume()}%`;
+        }
+    }
+}
+
+const text_info = {
+    'time-current': '',
+    'time-duration': '',
+    'status-live-latency': '',
+    'status-buffer-health': '',
+    'time-date': '',
+    'time-now': '',
+};
+function update_text_info() {
+    try {
+        const current_time = Math.floor(html5_video_player.getCurrentTime());
+        const duration_time = microformat.duration;
+        const time_now = Date().toString().split(' ')[4]; // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
+        const start_date = microformat?.publication?.[0]?.startDate || microformat?.uploadDate;
+        const video_stats = html5_video_player.getStatsForNerds();
+        const live_latency = video_stats['live_latency_secs'];
+        const buffer_health = video_stats['buffer_health_seconds'];
+
+        text_info['time-current'] = Formatter.time(current_time);
+        text_info['time-duration'] = !live_latency ? ` / ${duration_time}` : '';
+        text_info['time-date'] = live_latency ? Formatter.date(null, html5_video_player.getMediaReferenceTime()) : Formatter.date(start_date, current_time);
+        text_info['time-now'] = ` [${time_now}]`;
+        text_info['status-live-latency'] = live_latency ? ` (L: ${live_latency})` : '';
+        text_info['status-buffer-health'] = buffer_health ? ` (B: ${buffer_health})` : '';
+
+        if (element_on_controller) element_on_controller.textContent = `${text_info['time-current']}${text_info['time-duration']}${text_info['time-date']}`;
+        if (element_on_video) element_on_video.textContent = Object.values(text_info).join('');
+    }
+    catch (e) {
+        console.log(e)
+    }
+}
+
+async function get_video_microformat(video_id) {
+    try {
+        const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20240821.01.00' } }, video_id: video_id }),
+        });
+        if (!response.ok) {
+            throw new Error(`[fetch] response.status = ${response.status}`);
+        }
+        const player_microformat_renderer = (await response.json()).microformat.playerMicroformatRenderer;
+        // const player_microformat_renderer = {"thumbnail":{"thumbnails":[{"url":"https://i.ytimg.com/vi/UvupAYpP_JY/maxresdefault.jpg?sqp=-oaymwEmCIAKENAF8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGHIgOyhyMA8=&rs=AOn4CLArfKXrXapETsMF0W4Ci44uSMHKRQ","width":1280,"height":720}]},"embed":{"iframeUrl":"https://www.youtube.com/embed/UvupAYpP_JY","width":1280,"height":720},"title":{"simpleText":"【osu!】ここすき【白い雪のプリンセスは / 湊あくあ】"},"lengthSeconds":"16","ownerProfileUrl":"http://www.youtube.com/@Nekone0405","externalChannelId":"UCSjn4tVXo_tuGHRsrH2RGMQ","isFamilySafe":true,"availableCountries":["AD","AE","AF","AG","AI","AL","AM","AO","AQ","AR","AS","AT","AU","AW","AX","AZ","BA","BB","BD","BE","BF","BG","BH","BI","BJ","BL","BM","BN","BO","BQ","BR","BS","BT","BV","BW","BY","BZ","CA","CC","CD","CF","CG","CH","CI","CK","CL","CM","CN","CO","CR","CU","CV","CW","CX","CY","CZ","DE","DJ","DK","DM","DO","DZ","EC","EE","EG","EH","ER","ES","ET","FI","FJ","FK","FM","FO","FR","GA","GB","GD","GE","GF","GG","GH","GI","GL","GM","GN","GP","GQ","GR","GS","GT","GU","GW","GY","HK","HM","HN","HR","HT","HU","ID","IE","IL","IM","IN","IO","IQ","IR","IS","IT","JE","JM","JO","JP","KE","KG","KH","KI","KM","KN","KP","KR","KW","KY","KZ","LA","LB","LC","LI","LK","LR","LS","LT","LU","LV","LY","MA","MC","MD","ME","MF","MG","MH","MK","ML","MM","MN","MO","MP","MQ","MR","MS","MT","MU","MV","MW","MX","MY","MZ","NA","NC","NE","NF","NG","NI","NL","NO","NP","NR","NU","NZ","OM","PA","PE","PF","PG","PH","PK","PL","PM","PN","PR","PS","PT","PW","PY","QA","RE","RO","RS","RU","RW","SA","SB","SC","SD","SE","SG","SH","SI","SJ","SK","SL","SM","SN","SO","SR","SS","ST","SV","SX","SY","SZ","TC","TD","TF","TG","TH","TJ","TK","TL","TM","TN","TO","TR","TT","TV","TW","TZ","UA","UG","UM","US","UY","UZ","VA","VC","VE","VG","VI","VN","VU","WF","WS","YE","YT","ZA","ZM","ZW"],"isUnlisted":true,"hasYpcMetadata":false,"viewCount":"2","category":"People & Blogs","publishDate":"2024-11-21T17:43:01-08:00","ownerChannelName":"Wei","uploadDate":"2024-11-21T17:43:01-08:00","isShortsEligible":false}
+        return {
+            "@context": "https://schema.org",
+            "@type": "VideoObject",
+            // "description": player_microformat_renderer?.description?.simpleText,
+            "duration": `PT${player_microformat_renderer.lengthSeconds}S`,
+            "embedUrl": player_microformat_renderer.embed.iframeUrl,
+            "interactionCount": player_microformat_renderer.viewCount,
+            "name": player_microformat_renderer.title.simpleText,
+            "thumbnailUrl": [
+                player_microformat_renderer.thumbnail.thumbnails?.[0].url
+            ],
+            "uploadDate": player_microformat_renderer.uploadDate,
+            // "genre": player_microformat_renderer?.category,
+            "author": player_microformat_renderer.ownerChannelName,
+            "publication": [
+                {
+                    "@type": "BroadcastEvent",
+                    "isLiveBroadcast": true,
+                    "startDate": player_microformat_renderer?.liveBroadcastDetails?.startTimestamp,
+                    "endDate": player_microformat_renderer?.liveBroadcastDetails?.endTimestamp
+                }
+            ]
+        };
+    }
+    catch (e) {
+        console.log(e);
+    }
+}
+
+let timeoutid = null
+function change_volume_on_wheel(e) {
+    const volume = html5_video_player.getVolume() + (10 - 5 * e.shiftKey) * (e.deltaY < 0 ? 1 : -1);
+    if (volume <= 0) {
+        html5_video_player.setVolume(0);
+        html5_video_player.mute();
+    }
+    else {
+        html5_video_player.setVolume(volume);
+        html5_video_player.unMute();
+    }
+
+    const ytpBezel = document.querySelector('.ytp-bezel');
+    const ytpBezelText = document.querySelector('.ytp-bezel-text');
+    if (ytpBezelText && ytpBezel) {
+        ytpBezelText.textContent = `${html5_video_player.getVolume()}%`;
+        ytpBezelText.parentElement.parentElement.setAttribute('class', '');
+        ytpBezelText.parentElement.parentElement.style.display = '';
+        ytpBezel.style.display = 'none';
+        clearTimeout(timeoutid);
+        timeoutid = setTimeout(() => {
+            ytpBezelText.parentElement.parentElement.style.display = 'none';
+            ytpBezel.style.display = '';
+        }, 500);
+    }
+}
+
+function change_clock_on_video_bottom() {
+    const video_width = Number(html5_main_video.style.width.replace('px', ''))
+    const video_height = Number(html5_main_video.style.height.replace('px', ''))
+    const video_left = Number(html5_main_video.style.left.replace('px', ''))
+    const video_top = Number(html5_main_video.style.top.replace('px', ''))
+    const text_height = element_on_video.getBoundingClientRect().height
+    element_on_video.style.left = `${video_left + 2}px`
+    element_on_video.style.top = `${video_height + video_top - text_height + (video_top < text_height ? video_top : text_height + 2)}px`
+}
+
+(async function youtube_embed() {
+    try {
+        if (window.location.href.includes('https://www.youtube.com/embed/')) {
+            add_style_youtube();
+
+            const ytp_title_link = await wait_element('.ytp-title-link');
+            const video_id = ytp_title_link.href.split('/watch?v=').pop();
+            microformat = await get_video_microformat(video_id);
+
+            const ytp_time_wrapper = await wait_element('.ytp-time-wrapper');
+            element_on_controller = create_span('ytp-time-on-control');
+            ytp_time_wrapper.appendChild(element_on_controller);
+
+            const ytp_time_current = await wait_element('.ytp-time-current');
+            const ytp_time_separator = await wait_element('.ytp-time-separator');
+            const ytp_time_duration = await wait_element('.ytp-time-duration');
+            [ytp_time_current, ytp_time_separator, ytp_time_duration].forEach((e) => { e.style.display = 'none' });
+            microformat.duration = ytp_time_duration.textContent;
+
+            html5_video_player = await wait_element('.html5-video-player');
+
+            html5_main_video = await wait_element('.html5-main-video');
+            element_on_video = create_span('ytp-time-on-video');
+            html5_main_video.after(element_on_video);
+            new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true })
+
+            html5_main_video.addEventListener('timeupdate', update_text_info, { passive: true });
+            html5_main_video.addEventListener('volumechange', update_tooltip_text, { passive: true });
+            html5_main_video.addEventListener('wheel', change_volume_on_wheel, { passive: true });
+
+            const ytp_tooltip_text_wrapper = await wait_element('.ytp-tooltip-text-wrapper');
+            new MutationObserver(update_tooltip_text).observe(ytp_tooltip_text_wrapper, { attributes: true, subtree: true });
+        }
+    }
+    catch (e) {
+        console.log(e);
+    }
+})();
+
+(async function holodex_add_info_switch_button() {
+    if (window.location.href.includes('https://holodex.net/watch/')) {
+        const button_panel = await wait_element('div.watch-btn-group.ml-auto.d-flex');
+        const info_button_div = document.createElement('div');
+        info_button_div.style = `width: 36px; height: 36px; margin-right: 5px; display: flex; justify-content: center; align-items: center;`
+        const info_button = document.createElement('button');
+        info_button.style = `width: 24px; height: 24px; border: solid 2px; border-radius: 50%;`;
+        info_button.textContent = 'i';
+        info_button_div.appendChild(info_button)
+        button_panel.firstChild.before(info_button_div);
+        info_button.addEventListener('click', () => {
+            const selectors = 'div.watch-card.rounded-0.v-card.v-sheet.theme--dark, div.v-lazy, div.d-flex.sidebar.flex-column';
+            if (info_button_div.classList.contains('primary--text')) {
+                document.querySelectorAll(selectors).forEach((e) => { e.setAttribute('style', ''); });
+                info_button_div.setAttribute('class', '');
+            }
+            else {
+                document.querySelectorAll(selectors).forEach((e) => { e.setAttribute('style', 'display: none !important;!i;!;'); });
+                info_button_div.setAttribute('class', 'primary--text');
+            }
+        })
+        info_button.click();
+    }
+})();
+
+
+class Formatter {
+    static abbr = {
+        week: { Sun: '日', Mon: '一', Tue: '二', Wed: '三', Thu: '四', Fri: '五', Sat: '六' },
+        month: { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' }
+    }
+    static two_digits(number) {
+        return number.toString().padStart(2, '0');
+    }
+    static time(seconds) {
+        const [s, m, h] = [seconds % 60, (seconds / 60) % 60, seconds / 3600].map((e) => Math.floor(e));
+        return h > 0 ? `${h}:${this.two_digits(m)}:${this.two_digits(s)}` : `${m}:${this.two_digits(s)}`;
+    }
+    static date(start_date, seconds) {
+        const present_time = new Date((start_date ? Date.parse(start_date) : 0) + Math.floor(seconds * 1000));
+        const [week, month, day, year, time] = present_time.toString().split(' ');
+        return ` (${year}/${this.abbr.month[month]}/${day} (${this.abbr.week[week]}) ${time})`;
+    }
+}
