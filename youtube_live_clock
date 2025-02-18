@@ -1,0 +1,258 @@
+// ==UserScript==
+// @name        Youtube Live Clock
+// @namespace   Violentmonkey Scripts
+// @match       https://www.youtube.com/*
+// @match       https://www.youtube.com/watch?v=*
+// @match       https://www.youtube.com/live/*
+// @version     2.5.4
+// @author      Nekone
+// @description 2024/6/3 下午3:47:05
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
+// @grant       GM_addStyle
+// ==/UserScript==
+
+'use strict'
+
+let microformat = null // JSON.parse(document.querySelector('#microformat script').textContent)
+
+const ENABLE_CLOCK_ON_CONTROLLER = true
+let element_on_controller = null
+
+const ENABLE_CLCOK_ON_VIDEO = true
+let element_on_video = null
+
+const ENABLE_REWIND_TIME_FORMAT = true
+
+// const $ = (element) => document.querySelector(element)
+
+const two_digits = (number) => number.toString().padStart(2, '0')
+const time_format = (seconds) => {
+    // const s = (seconds % 60).toFixed(2).padStart(5, '0')
+    // const m = Math.floor((seconds / 60) % 60)
+    // const h = Math.floor(seconds / 3600)
+    // return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`
+    const [s, m, h] = [seconds % 60, (seconds / 60) % 60, seconds / 3600].map((e) => Math.floor(e))
+    return h > 0 ? `${h}:${two_digits(m)}:${two_digits(s)}` : `${m}:${two_digits(s)}`
+}
+
+const abbr = {
+    week: { Sun: '日', Mon: '一', Tue: '二', Wed: '三', Thu: '四', Fri: '五', Sat: '六' },
+    month: { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' }
+}
+const date_format = (start_date, seconds) => {
+    const present_time = new Date((start_date ? Date.parse(start_date) : 0) + Math.floor(seconds * 1000))
+    const [week, month, day, year, time] = present_time.toString().split(' ')
+    return ` (${year}/${abbr.month[month]}/${day} (${abbr.week[week]}) ${time})`
+}
+
+let ytp_time_wrapper = null
+let ytp_progress_bar = null
+let ytp_time_current = null
+let ytp_time_separator = null
+let ytp_time_duration = null
+let html5_video_player = null
+let html5_main_video = null
+let ytp_tooltip_text_wrapper = null
+let ytd_watch_info_text = null
+function wait_elements() {
+    return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+            const e = [
+                ytp_time_wrapper = document.querySelector('.ytp-time-wrapper') ,
+                ytp_progress_bar = document.querySelector('.ytp-progress-bar') ,
+                ytp_time_current = document.querySelector('.ytp-time-current') ,
+                ytp_time_separator = document.querySelector('.ytp-time-separator') ,
+                ytp_time_duration = document.querySelector('.ytp-time-duration') ,
+                html5_video_player = document.querySelector('.html5-video-player') ,
+                html5_main_video = document.querySelector('.html5-main-video') ,
+                ytp_tooltip_text_wrapper = document.querySelector('.ytp-tooltip-text-wrapper') ,
+                ytd_watch_info_text = document.querySelector('#ytd-watch-info-text') ,
+            ]
+            if (!e.includes(null)) {
+                observer.disconnect()
+                resolve()
+            }
+        })
+        observer.observe(document.body, { attributes: false, childList: true, subtree: true })
+    })
+}
+
+function create_element_clock_on_controller() {
+    let element = document.querySelector('.ytp-time-on-control')
+    if (!element) {
+        element = document.createElement('span')
+        element.setAttribute('class', 'ytp-time-on-control')
+        ytp_time_wrapper.appendChild(element)
+        document.querySelectorAll('.ytp-time-current, .ytp-time-separator, .ytp-time-duration').forEach((e) => { e.style.display = 'none' })
+    }
+    return element
+}
+
+function create_element_clock_on_video() {
+    let element = document.querySelector('.ytp-time-on-video')
+    if (!element) {
+        element = document.createElement('span')
+        element.setAttribute('class', 'ytp-time-on-video')
+        // html5_video_player.appendChild(element)
+        html5_main_video.after(element)
+    }
+    return element
+}
+
+function convert_rewind_time(time_string) {
+    const [s, m, h] = time_string.split(':').reverse().map((e) => Math.abs(Number(e)))
+    const totalSeconds = s + (m || 0) * 60 + (h || 0) * 3600
+    return time_string[0] == '-' ? -totalSeconds : totalSeconds
+}
+
+function update_tooltip_text() {
+    const ytp_tooltip_text = document.querySelector('.ytp-tooltip-text-wrapper .ytp-tooltip-text')
+    if (ytp_tooltip_text) {
+        const text_content = ytp_tooltip_text.textContent
+        if (text_content.includes(':') && !['(', ')'].some(e => text_content.includes(e))) {
+            const rewind_time_second = convert_rewind_time(text_content)
+            const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate
+            if (rewind_time_second > 0) {
+                ytp_tooltip_text.textContent = `${text_content} / ${ytp_time_duration.textContent}\n` + date_format(start_date, rewind_time_second)
+            }
+            else {
+                const seconds_from_start = Math.floor((Date.now() - Date.parse(start_date)) / 1000) + rewind_time_second
+                ytp_tooltip_text.textContent = `${time_format(seconds_from_start)} / ${text_content}\n` + date_format(start_date, seconds_from_start)
+            }
+        }
+        else if (['音量', '%'].some(e => text_content.includes(e))) {
+            ytp_tooltip_text.textContent = `${html5_video_player.getVolume()}%`
+        }
+    }
+}
+
+let text_info = {
+    'time-current': '',
+    'time-duration': '',
+    'status-live-latency': '',
+    'status-buffer-health': '',
+    'status-view-count': '',
+    'time-date': '',
+    'time-now': '',
+}
+function update_text_info() {
+    try {
+        const current_time = html5_video_player.getCurrentTime()
+        const duration = html5_video_player.getDuration()
+        const time_now = Date().toString().split(' ')[4] // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
+        const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate
+        const video_stats = html5_video_player.getStatsForNerds()
+        const live_latency = video_stats['live_latency_secs']
+        const buffer_health = video_stats['buffer_health_seconds']
+        const view_count = live_latency ? ytd_watch_info_text.viewCountProps.numberText : (Number(microformat.interactionCount) || '').toLocaleString()
+
+        text_info['time-current'] = time_format(current_time)
+        text_info['time-duration'] = !live_latency ? ` / ${time_format(duration)}` : ''
+        text_info['time-date'] = live_latency ? date_format(null, html5_video_player.getMediaReferenceTime()) : date_format(start_date, current_time)
+        text_info['time-now'] = ` [${time_now}]`
+        text_info['status-live-latency'] = live_latency ? ` (L: ${live_latency})` : ''
+        text_info['status-buffer-health'] = buffer_health ? ` (B: ${buffer_health})` : ''
+        text_info['status-view-count'] = view_count ? ` (V: ${view_count})` : ''
+
+        if (element_on_controller) element_on_controller.textContent = `${text_info['time-current']}${text_info['time-duration']}${text_info['time-date']}`
+        if (element_on_video) element_on_video.textContent = Object.values(text_info).join('')
+    }
+    catch (e) { console.log(e) }
+}
+
+let timeout_id = null
+function change_volume_on_wheel(e) {
+    // console.log(e)
+    // console.log(e.deltaY, e.shiftKey)
+    const onYTLSTM = document.querySelector('body[data-ytlstm-theater-mode]')
+    if (onYTLSTM) {
+        const volume = html5_video_player.getVolume() + (10 - 5 * e.shiftKey) * (e.deltaY < 0 ? 1 : -1)
+        if (volume <= 0) {
+            html5_video_player.setVolume(0)
+            html5_video_player.mute()
+        }
+        else {
+            html5_video_player.setVolume(volume)
+            html5_video_player.unMute()
+        }
+
+        const ytp_bezel = document.querySelector('.ytp-bezel')
+        const ytp_bezel_text = document.querySelector('.ytp-bezel-text')
+        if (ytp_bezel_text && ytp_bezel) {
+            ytp_bezel_text.textContent = `${html5_video_player.getVolume()}%`
+            ytp_bezel_text.parentElement.parentElement.setAttribute('class', '')
+            ytp_bezel_text.parentElement.parentElement.style.display = ''
+            ytp_bezel.style.display = 'none'
+            clearTimeout(timeout_id)
+            timeout_id = setTimeout(() => {
+                ytp_bezel_text.parentElement.parentElement.style.display = 'none'
+                ytp_bezel.style.display = ''
+            }, 500)
+        }
+    }
+}
+
+
+function change_clock_on_video_bottom() {
+    const video_width = Number(html5_main_video.style.width.replace('px', ''))
+    const video_height = Number(html5_main_video.style.height.replace('px', ''))
+    const video_left = Number(html5_main_video.style.left.replace('px', ''))
+    const video_top = Number(html5_main_video.style.top.replace('px', ''))
+    const text_height = element_on_video.getBoundingClientRect().height
+    element_on_video.style.left = `${video_left + 2}px`
+    element_on_video.style.top = `${video_height + video_top - text_height + (video_top < text_height ? video_top : text_height + 2)}px`
+}
+
+async function Live_Clock() {
+    try {
+        await wait_elements()
+
+        microformat = JSON.parse(document.querySelector('#microformat script').textContent)
+
+        html5_main_video.addEventListener('timeupdate', update_text_info, { passive: true })
+        html5_main_video.addEventListener('volumechange', update_tooltip_text, { passive: true })
+        html5_main_video.addEventListener('wheel', change_volume_on_wheel, { passive: true })
+
+        if (ENABLE_CLOCK_ON_CONTROLLER) { element_on_controller = create_element_clock_on_controller() }
+        if (ENABLE_CLCOK_ON_VIDEO) { element_on_video = create_element_clock_on_video() }
+
+        if (ENABLE_REWIND_TIME_FORMAT) { new MutationObserver(update_tooltip_text).observe(ytp_tooltip_text_wrapper, { attributes: true, subtree: true }) }
+
+        new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true })
+    }
+    catch (e) {
+        console.log(e)
+    }
+}
+
+if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
+    document.addEventListener('yt-navigate-finish', Live_Clock, { once: true })
+}
+
+GM_addStyle(`
+
+.ytp-tooltip-text {
+    white-space: pre-line !important;
+    font-size: 1.4rem;
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black !important;
+}
+
+.ytp-time-current,
+.ytp-time-separator,
+.ytp-time-duration,
+.ytp-time-on-control {
+    font-size: 1.4rem;
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
+}
+
+.ytp-time-on-video {
+    position: absolute;
+/*     bottom: 0px; */
+/*     left: 1px; */
+/*     z-index: 11; */
+    color: #FFFFFF;
+    font-size: 14px;
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
+}
+
+`)
