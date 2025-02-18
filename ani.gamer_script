@@ -1,0 +1,74 @@
+// ==UserScript==
+// @name        ani.gamer Script
+// @namespace   Violentmonkey Scripts
+// @match       https://ani.gamer.com.tw/animeVideo.php?sn=*
+// @match       https://*.safeframe.googlesyndication.com/safeframe/*/html/container.html
+// @grant       none
+// @version     1.0.0
+// @author      Nekone
+// @description 2024/11/26 上午4:23:42
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=ani.gamer.com.tw
+// ==/UserScript==
+
+(function mute_video() {
+    const observer = new MutationObserver((array) => {
+        array.forEach((mutation_record) => {
+            mutation_record.addedNodes.forEach((node) => {
+                try {
+                    document.querySelectorAll('video').forEach((v) => {
+                        if (v?.id !='ani_video_html5_api') {
+                            if (!v.muted) {
+                                v.muted = true;
+                                // console.log('Location:', window.location.href, v);
+                            }
+                        }
+                    });
+                }
+                catch (e) {
+                    console.log(node);
+                    console.log(e);
+                }
+            })
+        })
+    });
+    observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+})();
+
+(async function vjs() {
+    if (window.location.href.includes('https://ani.gamer.com.tw/animeVideo.php?sn=')) {
+        const video_js = await new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const e = document.querySelector('video-js#ani_video');
+                if (e) {
+                    observer.disconnect();
+                    resolve(e);
+                }
+            })
+            observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+        });
+
+        new MutationObserver(() => {
+            if (video_js.className.includes('ad')) {
+                video_js.querySelector('video').muted = true;
+                video_js.querySelector('video').playbackRate = 1;
+            }
+            else {
+                video_js.querySelector('video').muted = false;
+            }
+        }).observe(video_js, { attributes: true, childList: false, subtree: false });
+
+        const key = {'ArrowRight': 80, 'ArrowLeft': -80}
+        video_js.addEventListener('keydown', (e) => {
+            const video = video_js.querySelector('video');
+            if (e.ctrlKey) {
+                video.currentTime = video.currentTime + key[e.key]
+                // if (e.key == 'ArrowRight') {
+                //     video.currentTime = video.currentTime + 80
+                // }
+                // else if (e.key == 'ArrowLeft') {
+                //     video.currentTime = video.currentTime - 80
+                // }
+            }
+        });
+    }
+})();
