@@ -1,0 +1,177 @@
+// ==UserScript==
+// @name        Twitter Date Display
+// @namespace   Violentmonkey Scripts
+// @match       https://x.com/*
+// @match       https://twitter.com/*
+// @grant       none
+// @version     1.1.0
+// @author      Nekone
+// @description 2024/8/25 下午4:09:51
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=twitter.com
+// @grant       GM_addStyle
+// @grant       GM_setValue
+// @grant       GM_getValue
+// ==/UserScript==
+
+const DOT = '·'
+const ADD_PIXIV = true
+const done_tag = 'twitter-date-display'
+
+function get_twitter_ID() {
+    //  0         1   2        3             4         5
+    // ['https:', '', 'x.com', 'nekone0405', 'status', '1477739458573533184']
+    // ['https:', '', 'x.com', 'nekone0405']
+    return location.href.toLowerCase().split('/')[3]
+}
+
+function get_pixiv_ID(twitter_ID_or_href) {
+    const twitter_ID = twitter_ID_or_href.includes('http') ? twitter_ID_or_href.toLowerCase().split('/')[3] : twitter_ID_or_href.toLowerCase()
+    return GM_getValue('mapping', {})[twitter_ID]
+}
+
+function get_mapping() {
+    return GM_getValue('mapping', {})
+}
+
+function inject(tweet) {
+    tweet.querySelectorAll('time').forEach((time) => {
+        if (time.parentElement.nodeName == 'A') {
+            const href = time.parentElement.href.toLowerCase().replace('/history', '')
+
+            if (location.href.toLowerCase().includes(href)) {
+                time.textContent = [new Date(time.dateTime).toLocaleTimeString(), ...time.textContent.split(' ').slice(1, 3)].join(' ')
+            }
+            else {
+                time.textContent = `${time.textContent} ${DOT} ${new Date(time.dateTime).toLocaleString('zh-tw', { hourCycle:'h24' })}`
+            }
+
+            if (ADD_PIXIV && tweet.querySelector('a[href*="photo"]')) {
+                const pixiv_ID = get_pixiv_ID(href)
+                if (pixiv_ID) {
+                    const root = time.parentElement.parentElement.parentElement
+                    if (!root.querySelector("#pixiv-tweet-link")) {
+                        const s = `<a id="pixiv-tweet-link" href="https://www.pixiv.net/users/${pixiv_ID}/illustrations" target="_blank" style="font-family: Segoe UI; color: #1D9BF0;">Pixiv</a>`
+                        const e = new DOMParser().parseFromString(s,'text/html').body.firstChild
+                        root.appendChild(root.childNodes[1].cloneNode(true))
+                        root.appendChild(e)
+                    }
+                }
+            }
+        }
+        else {
+            // time.parentElement.nodeName == 'DIV' in quote tweet.
+            time.textContent = `${time.textContent} ${DOT} ${new Date(time.dateTime).toLocaleString('zh-tw', { hourCycle:'h24' })}`
+
+        }
+    })
+}
+
+const pixiv_html = `
+<div id="pixiv-container" style="display: flex; flex-direction: column; flex: 0 1 auto; padding: 0px 10px;">
+    <div style="display: flex; flex: 0 1 auto; padding-bottom: 4px;">
+        <span id="pixiv-input-title" style="display: flex; font-family: Segoe UI; padding-right: 4px; flex: 0 2 auto; width: 100%;">Pixiv ID</span>
+        <input id="pixiv-input" type="text" style="display: flex; font-family: Segoe UI; flex: 0 1 auto; width: 100%;">
+    </div>
+    <input id="pixiv-button" type="button" value="GM_setValue" style="display: flex; font-family: Segoe UI; flex: 0 1 auto;">
+    <div style="display: flex; flex: 0 1 auto;">
+        <span id="pixiv-result" style="display: flex; font-family: Segoe UI; flex: 0 1 auto;"></span>
+        <a id="pixiv-link" target="_blank" style="display: flex; font-family: Segoe UI; flex: 0 1 auto;"></a>
+    </div>
+</div>
+`.replaceAll('    ', '').replaceAll('\n', '')
+
+function pixiv_button_onclick(pixiv_container) {
+    const i = pixiv_container.querySelector('#pixiv-input')
+    const b = pixiv_container.querySelector('#pixiv-button')
+    const r = pixiv_container.querySelector('#pixiv-result')
+    const l = pixiv_container.querySelector('#pixiv-link')
+
+    const pixiv_ID_input = i.value
+    if (Number.isInteger(Number(pixiv_ID_input)) && pixiv_ID_input != '') {
+        const mapping = get_mapping()
+        // const pixiv_ID_index = Object.values(c).indexOf("8129277")
+        const pixiv_ID_index = Object.values(mapping).indexOf(pixiv_ID_input)
+        // if (pixiv_ID_index > -1) {
+        //     const twitter_ID = Object.keys(mapping)[pixiv_ID_index];
+        //     r.textContent = `ID Exist! User: `;
+        //     l.textContent = `@${twitter_ID}`;
+        //     l.href = `/${twitter_ID}`;
+        // }
+        // else {
+            const twitter_ID = get_twitter_ID();
+            const pixiv_ID = pixiv_ID_input
+            mapping[twitter_ID] = pixiv_ID;
+            GM_setValue('mapping', mapping);
+            i.readOnly = true;
+            b.disabled = true;
+            r.textContent = '';
+            l.href = `https://www.pixiv.net/users/${pixiv_ID}/illustrations`;
+            l.textContent = `pixiv.net/users/${pixiv_ID}`;
+        // }
+    }
+    else {
+        r.textContent = 'NaN';
+        l.textContent = '';
+        l.href = '';
+    }
+
+    // console.log(pixiv_input_text)
+}
+
+function add_pixiv_container() {
+    const user_name = document.querySelector('[data-testid="UserName"]')
+    if (user_name) {
+        const avatar_root = user_name.parentElement.firstChild
+        if (avatar_root && !avatar_root.querySelector('#pixiv-container')) {
+            const pixiv_container = new DOMParser().parseFromString(pixiv_html,'text/html').body.firstChild
+            avatar_root.firstChild.after(pixiv_container)
+            avatar_root.style.flexWrap = 'nowrap'
+            // avatar_root.style.justifyContent = 'center'
+
+            const pixiv_ID = get_pixiv_ID(location.href)
+            if (pixiv_ID) {
+                const i = pixiv_container.querySelector('#pixiv-input')
+                const b = pixiv_container.querySelector('#pixiv-button')
+                const l = pixiv_container.querySelector('#pixiv-link')
+                i.value = pixiv_ID;
+                i.readOnly = true;
+                b.disabled = true;
+                l.href = `https://www.pixiv.net/users/${pixiv_ID}/illustrations`;
+                l.textContent = `pixiv.net/users/${pixiv_ID}`;
+            }
+            pixiv_container.querySelector('#pixiv-button').addEventListener('click', () => { pixiv_button_onclick(pixiv_container) });
+        }
+    }
+}
+
+(function main() {
+    new MutationObserver(() => {
+        try { add_pixiv_container() }
+        catch (e) { console.error(e) }
+
+        document.querySelectorAll(`[data-testid="tweet"]:not([${done_tag}])`).forEach((tweet) => {
+            try { inject(tweet) }
+            catch (e) { console.error(e) }
+            finally { tweet.setAttribute(done_tag, '') }
+        })
+    }).observe(document.body, { attributes: false, childList: true, subtree: true })
+})();
+
+/* GM_addStyle(`
+
+header[role="banner"] .r-pt392 {
+    margin-left: unset !important;
+}
+
+.r-1ye8kvj {
+    max-width: 710px !important;
+}
+
+[data-testid="primaryColumn"] {
+    max-width: 730px !important;
+}
+[data-testid="sidebarColumn"] {
+    margin-right: -60px !important;
+}
+
+`); */
