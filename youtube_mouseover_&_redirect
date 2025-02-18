@@ -1,0 +1,40 @@
+// ==UserScript==
+// @name        Youtube Mouseover & Redirect
+// @namespace   Violentmonkey Scripts
+// @match       https://*.youtube.com/*
+// @grant       none
+// @version     1.3.2
+// @author      Nekone
+// @description 2024/5/14 上午1:00:22
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
+// @run-at      document-start
+// ==/UserScript==
+
+'use strict'
+
+// 'https://www.youtube.com/shorts/'.length = 31
+// https://www.youtube.com/watch?v=LqFiHOqknto&list=WL&index=99&pp=gAQBiAQB
+
+const url = document.location.href
+if (url.includes('/shorts/') && url.length > 31) {
+    document.location.replace(url.replace('/shorts/', '/watch?v='))
+}
+
+function callbackfn(event) {
+    try {
+        const a = event.target.closest('a')
+        if (!a) return;
+        if (a.href.includes('&list=') && a.id == 'thumbnail') {
+            a.href = a.href.split('&list=').shift()
+            // console.log(a)
+        }
+        if (a.href.includes('/shorts/')) {
+            a.href = a.href.replace('/shorts/', '/watch?v=')
+        }
+    }
+    catch (e) {
+        console.log(e)
+    }
+}
+
+document.addEventListener('mouseover', callbackfn);
