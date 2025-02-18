@@ -1,0 +1,64 @@
+// ==UserScript==
+// @name        YouTube Extend Right Click Menu
+// @namespace   Violentmonkey Scripts
+// @match       *://www.youtube.com/*
+// @grant       none
+// @version     1.0.2
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
+// @author      Nekone
+// @description 2024/8/21 上午4:57:12
+// ==/UserScript==
+
+"use strict"
+
+let popupContextmenu = null
+let microformatScript = null
+let thumbnailUrl = null
+const waitElements = () => {
+    return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+            popupContextmenu = document.querySelector('.ytp-popup.ytp-contextmenu')
+            microformatScript = document.querySelector('#microformat script')?.textContent
+            if (microformatScript) {
+                thumbnailUrl = JSON.parse(microformatScript).thumbnailUrl[0].split('?')[0]
+            }
+            if (popupContextmenu && thumbnailUrl) {
+                observer.disconnect()
+                resolve()
+            }
+        })
+        observer.observe(document.body, { attributes: false, childList: true, subtree: true })
+    })
+}
+
+const addMenuitemCopyThumbnail = () => {
+    if (!popupContextmenu.querySelector('#ytp-menuitem-copy-thumbnail')) {
+        const ytpMenuitems = popupContextmenu.querySelectorAll('.ytp-menuitem')
+        const displayItem = 1 + popupContextmenu.querySelectorAll('.ytp-menuitem:not([style])').length
+        const width = ytpMenuitems[2].style.display == 'none' ? '251px' : '283px'
+        const height = `${17 + 40 * displayItem}px`
+
+        const ytpMenuitemCopyUrl = ytpMenuitems[1]
+        const ytpMenuitemCopyThumbnail = ytpMenuitemCopyUrl.cloneNode(true)
+        ytpMenuitemCopyThumbnail.setAttribute('id', 'ytp-menuitem-copy-thumbnail')
+        ytpMenuitemCopyThumbnail.querySelector('.ytp-menuitem-label').textContent = '複製影片縮圖'
+        ytpMenuitemCopyThumbnail.addEventListener('click', () => {
+            ytpMenuitemCopyUrl.click()
+            navigator.clipboard.writeText(thumbnailUrl);
+        })
+        ytpMenuitemCopyUrl.before(ytpMenuitemCopyThumbnail)
+        popupContextmenu.style.width = width
+        popupContextmenu.style.height = height
+        popupContextmenu.querySelector('.ytp-panel').style = `width: ${width}; height: ${height};`
+        popupContextmenu.querySelector('.ytp-panel-menu').style = `height: ${height};`
+    }
+}
+
+const main = async () => {
+    if (window.location.href.includes('/watch?v=') || window.location.href.includes('/live/')) {
+        await waitElements()
+        await addMenuitemCopyThumbnail()
+    }
+}
+
+document.addEventListener('yt-navigate-finish', main, { once: true })
