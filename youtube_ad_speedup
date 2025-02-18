@@ -1,0 +1,105 @@
+// ==UserScript==
+// @name        YouTube AD Speedup
+// @namespace   Violentmonkey Scripts
+// @match       *://www.youtube.com/*
+// @grant       none
+// @version     1.0.4
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
+// @author      Nekone
+// @description 2024/5/21 上午1:14:08
+// @run-at      document-start
+// ==/UserScript==
+
+"use strict"
+
+const click_skip_button = false
+const speedup_playbackrate = 2.1
+
+let ytp_progress_bar = null
+let html5_main_video = null
+let html5_video_player = null
+function wait_elements() {
+    return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+            const e = [
+                ytp_progress_bar = document.querySelector('.ytp-progress-bar') ,
+                html5_main_video = document.querySelector('.html5-main-video') ,
+                html5_video_player = document.querySelector('.html5-video-player') ,
+            ]
+            if (!e.includes(null)) {
+                observer.disconnect()
+                resolve()
+            }
+        })
+        observer.observe(document.body, { attributes: false, childList: true, subtree: true })
+    })
+}
+
+function skip_ad() {
+    const ad = document.querySelector('.ad-showing, .ad-interrupting')
+    if (ad) {
+        html5_main_video.muted = true
+        if (html5_main_video.playbackRate != speedup_playbackrate) {
+            html5_main_video.playbackRate = speedup_playbackrate
+        }
+        if (click_skip_button) {
+            const ytp_skip_button = document.querySelector('button[id*="skip-button"]')
+            if (ytp_skip_button) {
+                const rect = ytp_skip_button.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                if (x && y && x > 0 && y > 0) {
+                    chrome.runtime.sendMessage({command: "skip_ad", x, y});
+                }
+            }
+        }
+    }
+    else if (html5_main_video.playbackRate == speedup_playbackrate) {
+        html5_main_video.muted = html5_video_player.isMuted()
+        html5_main_video.playbackRate = html5_video_player.getPlaybackRate()
+    }
+}
+
+async function main() {
+    if (window.location.href.includes('/watch?v=') || window.location.href.includes('/live/')) {
+        await wait_elements()
+        new MutationObserver(skip_ad).observe(ytp_progress_bar, { attributes: true })
+    }
+}
+
+document.addEventListener('yt-navigate-finish', main, { once: true })
+
+if (click_skip_button) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.command === "skipAd") {
+            chrome.debugger.attach({tabId: sender.tab.id}, "1.3", () => {
+                console.log('start click left')
+                chrome.debugger.sendCommand({
+                    tabId: sender.tab.id
+                }, "Input.dispatchMouseEvent", {
+                    type: "mousePressed",
+                    x: request.x,
+                    y: request.y,
+                    button: "left",
+                    clickCount: 1
+                }, () => {
+                    console.log('start released left')
+
+                    chrome.debugger.sendCommand({
+                        tabId: sender.tab.id
+                    }, "Input.dispatchMouseEvent", {
+                        type: "mouseReleased",
+                        x: request.x,
+                        y: request.y,
+                        button: "left",
+                        clickCount: 1
+                    }, () => {
+                        chrome.debugger.detach({tabId: sender.tab.id});
+                    });
+                });
+            });
+        } else if (request.command === 'wakeup') {
+            console.log(`wakeup`);
+        }
+    });
+}
