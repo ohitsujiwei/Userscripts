@@ -25,7 +25,6 @@ function wait_element(selector) {
 (async function main() {
     try {
         if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
-            const text = [];
             const video = await wait_element('video[webkit-playsinline]');
             const span = document.createElement('span');
             span.setAttribute('id', 'live-time-on-video');
@@ -64,7 +63,6 @@ function wait_element(selector) {
                     }).observe(...e);
                 });
             }
-            new MutationObserver(() => { span.textContent = text.join(' ');}).observe(...e);
 
             // const video_container = await wait_element('[data-test-selector="video-player__video-container"]')
             // video_container.addEventListener('wheel', (event) => { change_volume_on_wheel(event, video_container, volume) }, { passive: true })
