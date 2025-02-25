@@ -12,33 +12,140 @@
 function wait_element(selector) {
     return new Promise((resolve) => {
         const observer = new MutationObserver(() => {
-            const e = document.querySelector(selector)
+            const e = document.querySelector(selector);
             if (e) {
-                observer.disconnect()
-                resolve(e)
+                observer.disconnect();
+                resolve(e);
             }
         })
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true })
+        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
     })
 }
 
 (async function main() {
-    if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
-        const video = await wait_element('video[webkit-playsinline]')
-        const span = document.createElement('span')
-        span.setAttribute('id', 'live-time-on-video')
-        span.style = `z-index: 1; position: absolute; bottom: 0px; left: 2px; text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; font-family: 'Consolas'; font-size: medium;`
-        video.before(span)
-        if (location.href.includes('/videos/')) {
-            const current_time = await wait_element('p[data-a-target="player-seekbar-current-time"]');
-            current_time.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`
-            const duration = await wait_element('p[data-a-target="player-seekbar-duration"]');
-            duration.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`
-            new MutationObserver( () => { span.textContent = `${current_time.textContent} / ${duration.textContent} [${Date().toString().split(' ')[4]}]` }).observe(current_time , { subtree:true, characterData:true })
+    try {
+        if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
+            const text = [];
+            const video = await wait_element('video[webkit-playsinline]');
+            const span = document.createElement('span');
+            span.setAttribute('id', 'live-time-on-video');
+            span.style = `z-index: 1; pointer-events: none; position: absolute; bottom: 0px; left: 4px; text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; font-family: system-ui; font-size: medium;`;
+            video.before(span);
+            const volume = await wait_element('input[id*="player-volume-slider"]');
+            if (location.href.includes('/videos/')) {
+                const current_time = await wait_element('p[data-a-target="player-seekbar-current-time"]');
+                current_time.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`;
+                const duration = await wait_element('p[data-a-target="player-seekbar-duration"]');
+                duration.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`;
+                [[current_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
+                    new MutationObserver(() => {
+                        span.textContent = [
+                            current_time.textContent,
+                            '/',
+                            duration.textContent,
+                            `(B: ${(video.buffered.end(0) - video.currentTime).toFixed(2)})`,
+                            `[${Date().toString().split(' ')[4]}]`,
+                            `(${video.playbackRate.toFixed(2)}x/${volume.ariaValueText})`,
+                        ].join(' ');
+                    }).observe(...e);
+                });
+            }
+            else {
+                const live_time = await wait_element('span.live-time > span');
+                const viewer_count = await wait_element('p[data-a-target="animated-channel-viewers-count"]');
+                [[live_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
+                    new MutationObserver(() => {
+                            span.textContent = [
+                                live_time.textContent,
+                                `(B: ${(video.buffered.end(0) - video.currentTime).toFixed(2)})`,
+                                `[${Date().toString().split(' ')[4]}]`,
+                                `(${viewer_count.textContent}/${volume.ariaValueText})`,
+                            ].join(' ');
+                    }).observe(...e);
+                });
+            }
+            new MutationObserver(() => { span.textContent = text.join(' ');}).observe(...e);
+
+            // const video_container = await wait_element('[data-test-selector="video-player__video-container"]')
+            // video_container.addEventListener('wheel', (event) => { change_volume_on_wheel(event, video_container, volume) }, { passive: true })
         }
-        else {
-            const live_time = await wait_element('span.live-time > span')
-            new MutationObserver( () => { span.textContent = `${live_time.textContent} [${Date().toString().split(' ')[4]}]` }).observe(live_time , { subtree:true, characterData:true })
+    }
+    catch (e) {
+        console.log(e);
+    }
+})();// ==UserScript==
+// @name        Twitch Live Time On Video
+// @namespace   Violentmonkey Scripts
+// @match       https://www.twitch.tv/*
+// @grant       none
+// @version     1.0.0
+// @author      Nekone
+// @description 2025/2/19 上午3:57:17
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
+// ==/UserScript==
+
+function wait_element(selector) {
+    return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+            const e = document.querySelector(selector);
+            if (e) {
+                observer.disconnect();
+                resolve(e);
+            }
+        })
+        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+    })
+}
+
+(async function main() {
+    try {
+        if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
+            const text = [];
+            const video = await wait_element('video[webkit-playsinline]');
+            const span = document.createElement('span');
+            span.setAttribute('id', 'live-time-on-video');
+            span.style = `z-index: 1; pointer-events: none; position: absolute; bottom: 0px; left: 4px; text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; font-family: system-ui; font-size: medium;`;
+            video.before(span);
+            const volume = await wait_element('input[id*="player-volume-slider"]');
+            if (location.href.includes('/videos/')) {
+                const current_time = await wait_element('p[data-a-target="player-seekbar-current-time"]');
+                current_time.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`;
+                const duration = await wait_element('p[data-a-target="player-seekbar-duration"]');
+                duration.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`;
+                [[current_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
+                    new MutationObserver(() => {
+                        span.textContent = [
+                            current_time.textContent,
+                            '/',
+                            duration.textContent,
+                            `(B: ${(video.buffered.end(0) - video.currentTime).toFixed(2)})`,
+                            `[${Date().toString().split(' ')[4]}]`,
+                            `(${video.playbackRate.toFixed(2)}x/${volume.ariaValueText})`,
+                        ].join(' ');
+                    }).observe(...e);
+                });
+            }
+            else {
+                const live_time = await wait_element('span.live-time > span');
+                const viewer_count = await wait_element('p[data-a-target="animated-channel-viewers-count"]');
+                [[live_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
+                    new MutationObserver(() => {
+                            span.textContent = [
+                                live_time.textContent,
+                                `(B: ${(video.buffered.end(0) - video.currentTime).toFixed(2)})`,
+                                `[${Date().toString().split(' ')[4]}]`,
+                                `(${viewer_count.textContent}/${volume.ariaValueText})`,
+                            ].join(' ');
+                    }).observe(...e);
+                });
+            }
+            new MutationObserver(() => { span.textContent = text.join(' ');}).observe(...e);
+
+            // const video_container = await wait_element('[data-test-selector="video-player__video-container"]')
+            // video_container.addEventListener('wheel', (event) => { change_volume_on_wheel(event, video_container, volume) }, { passive: true })
         }
+    }
+    catch (e) {
+        console.log(e);
     }
 })();
