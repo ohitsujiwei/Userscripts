@@ -42,7 +42,7 @@ const abbr = {
 const date_format = (start_date, seconds) => {
     const present_time = new Date((start_date ? Date.parse(start_date) : 0) + Math.floor(seconds * 1000))
     const [week, month, day, year, time] = present_time.toString().split(' ')
-    return ` (${year}/${abbr.month[month]}/${day} (${abbr.week[week]}) ${time})`
+    return `(${year}/${abbr.month[month]}/${day} (${abbr.week[week]}) ${time})`
 }
 
 let ytp_time_wrapper = null
@@ -134,28 +134,33 @@ let text_info = {
     'status-view-count': '',
     'time-date': '',
     'time-now': '',
+    'playbackrate-volume-quality':'',
 }
 function update_text_info() {
     try {
-        const current_time = html5_video_player.getCurrentTime()
-        const duration = html5_video_player.getDuration()
+        const current_time = html5_main_video.currentTime
+        const duration = html5_main_video.duration
         const time_now = Date().toString().split(' ')[4] // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
         const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate
-        const video_stats = html5_video_player.getStatsForNerds()
+        const video_stats = Object.assign({}, html5_video_player.getStatsForNerds(), html5_video_player.getVideoStats())
         const live_latency = video_stats['live_latency_secs']
         const buffer_health = video_stats['buffer_health_seconds']
+        const video_format = video_stats['optimal_format']
+        const volume = html5_video_player.getVolume()
+        const playbackrate = html5_main_video.playbackRate.toFixed(2)
         const view_count = live_latency ? ytd_watch_info_text.viewCountProps.numberText : (Number(microformat.interactionCount) || '').toLocaleString()
 
         text_info['time-current'] = time_format(current_time)
         text_info['time-duration'] = !live_latency ? ` / ${time_format(duration)}` : ''
+        text_info['status-live-latency'] = live_latency ? `(L/${live_latency})` : ''
+        text_info['status-buffer-health'] = buffer_health ? `(B/${buffer_health})` : ''
+        text_info['status-view-count'] = view_count ? `(V/${view_count})` : ''
         text_info['time-date'] = live_latency ? date_format(null, html5_video_player.getMediaReferenceTime()) : date_format(start_date, current_time)
-        text_info['time-now'] = ` [${time_now}]`
-        text_info['status-live-latency'] = live_latency ? ` (L: ${live_latency})` : ''
-        text_info['status-buffer-health'] = buffer_health ? ` (B: ${buffer_health})` : ''
-        text_info['status-view-count'] = view_count ? ` (V: ${view_count})` : ''
+        text_info['time-now'] = `[${time_now}]`
+        text_info['playbackrate-volume-quality'] = `(${playbackrate}x/${volume}%/${video_format})`
 
-        if (element_on_controller) element_on_controller.textContent = `${text_info['time-current']}${text_info['time-duration']}${text_info['time-date']}`
-        if (element_on_video) element_on_video.textContent = Object.values(text_info).join('')
+        if (element_on_controller) element_on_controller.textContent = `${text_info['time-current']}${text_info['time-duration']} ${text_info['time-date']}`
+        if (element_on_video) element_on_video.textContent = Object.values(text_info).join(' ')
     }
     catch (e) { console.log(e) }
 }
