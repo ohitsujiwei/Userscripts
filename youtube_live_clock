@@ -6,7 +6,7 @@
 // @match       https://www.youtube.com/live/*
 // @match       https://www.youtube.com/embed/*
 // @grant       none
-// @version     1.0.0
+// @version     1.0.1
 // @author      Nekone
 // @description 2024/6/3 下午3:47:05
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
@@ -45,7 +45,7 @@ const css_video = `
 
 function add_style(css) {
     const style = document.createElement('style');
-    style.setAttribute('id', 'embed');
+    style.setAttribute('id', 'live-clock');
     style.textContent = css;
     document.head.appendChild(style);
 }
@@ -188,28 +188,31 @@ async function get_video_microformat() {
 
 let timeoutid = null
 function change_volume_on_wheel(e) {
-    const volume = html5_video_player.getVolume() + (10 - 5 * e.shiftKey) * (e.deltaY < 0 ? 1 : -1);
-    if (volume <= 0) {
-        html5_video_player.setVolume(0);
-        html5_video_player.mute();
-    }
-    else {
-        html5_video_player.setVolume(volume);
-        html5_video_player.unMute();
-    }
+    const onYTLSTM = document.querySelector('body[data-ytlstm-theater-mode]')
+    if (onYTLSTM || location.href.includes('https://www.youtube.com/embed/')) {
+        const volume = html5_video_player.getVolume() + (10 - 5 * e.shiftKey) * (e.deltaY < 0 ? 1 : -1);
+        if (volume <= 0) {
+            html5_video_player.setVolume(0);
+            html5_video_player.mute();
+        }
+        else {
+            html5_video_player.setVolume(volume);
+            html5_video_player.unMute();
+        }
 
-    const ytpBezel = document.querySelector('.ytp-bezel');
-    const ytpBezelText = document.querySelector('.ytp-bezel-text');
-    if (ytpBezelText && ytpBezel) {
-        ytpBezelText.textContent = `${html5_video_player.getVolume()}%`;
-        ytpBezelText.parentElement.parentElement.setAttribute('class', '');
-        ytpBezelText.parentElement.parentElement.style.display = '';
-        ytpBezel.style.display = 'none';
-        clearTimeout(timeoutid);
-        timeoutid = setTimeout(() => {
-            ytpBezelText.parentElement.parentElement.style.display = 'none';
-            ytpBezel.style.display = '';
-        }, 500);
+        const ytpBezel = document.querySelector('.ytp-bezel');
+        const ytpBezelText = document.querySelector('.ytp-bezel-text');
+        if (ytpBezelText && ytpBezel) {
+            ytpBezelText.textContent = `${html5_video_player.getVolume()}%`;
+            ytpBezelText.parentElement.parentElement.setAttribute('class', '');
+            ytpBezelText.parentElement.parentElement.style.display = '';
+            ytpBezel.style.display = 'none';
+            clearTimeout(timeoutid);
+            timeoutid = setTimeout(() => {
+                ytpBezelText.parentElement.parentElement.style.display = 'none';
+                ytpBezel.style.display = '';
+            }, 500);
+        }
     }
 }
 
