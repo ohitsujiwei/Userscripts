@@ -30,6 +30,11 @@ const EMOJI_LABEL = [
 
 GM_addStyle(`
 
+/* 當你傳送訊息時，其他人將得知你已訂閱此頻道。 */
+tp-yt-iron-dropdown:has(#content.yt-tooltip-renderer) {
+    display: none !important;
+}
+
 yt-live-chat-placeholder-item-renderer {
     display: none !important;
 }
@@ -72,8 +77,8 @@ yt-live-chat-app yt-live-chat-text-message-renderer[whole-message-clickable] { c
 yt-live-chat-app yt-live-chat-text-message-renderer :is(#timestamp, #author-photo) { margin-right: 4px !important; }
 yt-live-chat-app yt-live-chat-text-message-renderer #menu :is(#button, #interaction) { display: none !important; }
 
-yt-live-chat-app yt-live-chat-text-message-renderer img { background: #0F0F0F; }
-yt-live-chat-app yt-live-chat-text-message-renderer:hover img { background: transparent; }
+yt-live-chat-app yt-live-chat-text-message-renderer:has(${USER_IMG_URL}) img { background: #0F0F0F; }
+/* yt-live-chat-app yt-live-chat-text-message-renderer:hover img { background: transparent; } */
 
 /* ---------- yt-live-chat-banner-renderer */
 yt-live-chat-app yt-live-chat-banner-manager#live-chat-banner { padding: unset !important; }
