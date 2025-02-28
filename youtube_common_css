@@ -2,7 +2,7 @@
 // @name        Youtube Common CSS
 // @namespace   Violentmonkey Scripts
 // @match       *://www.youtube.com/*
-// @version     2.1.2
+// @version     1.0.0
 // @author      Nekone
 // @description 2024/8/4 下午3:56:28
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
@@ -11,7 +11,7 @@
 
 // ytd-rich-item-renderer:not(:has(.badge-style-type-members-only)) // to filter membership video
 
-const title_ytdGuideEntryRenderer = [
+const title_ytd_guide_entry_renderer = [
     'Shorts',
     'YouTube Music',
     '你的頻道',
@@ -20,7 +20,7 @@ const title_ytdGuideEntryRenderer = [
     '已下載的內容',
 ].map(e => `[title="${e}"]`).join(', ')
 
-const title_ytdWatchMetadata = [
+const title_ytd_watch_metadata = [
     '分享',
     '剪輯片段',
     '透過超級感謝表達支持',
@@ -30,50 +30,16 @@ const title_ytdWatchMetadata = [
 
 GM_addStyle(`
 
-/* 2024/12/12 For Holodex button on Youtube ---------------------------------------------------------------------------------------------------- */
-yt-watch-holodex-btn-container#holodex-button {
-    width: 36px !important;
-}
-svg.yt-watch-holodex-icon {
-    position: absolute !important;
-    left: 10px !important;
-}
-span.yt-watch-holodex-label {
-    display: none !important;
-}
-
-/* 2024/12/04 ---------------------------------------------------------------------------------------------------- */
-
-ytd-rich-grid-media:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.button-container.ytd-rich-shelf-renderer {
-    display: none !important;
-}
-
-/* 2024/11/30 Youtube 改版 / 2024/12/01 又改回來了---------------------------------------------------------------------------------------------------- */
-
-.yt-thumbnail-view-model--large {
-    border-radius: unset !important;
-}
-.yt-content-metadata-view-model-wiz__metadata-row {
-    flex-wrap: wrap !important;
-}
-
-/* ---------------------------------------------------------------------------------------------------- */
-
-/* ytd-rich-item-renderer ytd-badge-supported-renderer p.ytd-badge-supported-renderer, */
-/* ytd-rich-item-renderer #buttons:has(yt-button-shape), */
-/* ytd-miniplayer .miniplayer.style-scope.ytd-miniplayer, */
+/* For Holodex button on Youtube ---------------------------------------------------------------------------------------------------- */
+yt-watch-holodex-btn-container#holodex-button { width: 36px !important; }
+svg.yt-watch-holodex-icon { position: absolute !important; left: 10px !important; }
+span.yt-watch-holodex-label { display: none !important; }
 
 /* ---------------------------------------------------------------------------------------------------- */
 
 ytd-watch-flexy #player-ads,
 ytd-watch-flexy #secondary #panels ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
-ytd-item-section-renderer ytd-ad-slot-renderer {
-    display: none !important;
-}
+ytd-item-section-renderer ytd-ad-slot-renderer,
 ytd-rich-grid-renderer #masthead-ad,
 ytd-rich-grid-renderer #contents ytd-rich-item-renderer:has(ytd-ad-slot-renderer) {
     display: none !important;
@@ -87,7 +53,7 @@ tp-yt-app-drawer #guide-inner-content {
 ytd-guide-renderer #sections ytd-guide-section-renderer h3:has([id="guide-section-title"]) {
     display: none !important;
 }
-ytd-guide-renderer #sections ytd-guide-section-renderer:first-child #items ytd-guide-entry-renderer:has(${title_ytdGuideEntryRenderer}) {
+ytd-guide-renderer #sections ytd-guide-section-renderer:first-child #items ytd-guide-entry-renderer:has(${title_ytd_guide_entry_renderer}) {
     display: none !important;
 }
 ytd-guide-renderer #sections ytd-guide-section-renderer:first-child #items ytd-guide-collapsible-section-entry-renderer {
@@ -135,6 +101,10 @@ ytd-rich-grid-renderer #contents ytd-rich-item-renderer:not([is-slim-media]) {
     /* 2025/01/24 Youtube update ipr count from 4 to 3 with 90% */
     width: calc(100% / max(4, var(--ytd-rich-grid-items-per-row)) - 8px) !important;
 }
+
+ytd-rich-grid-renderer #contents ytd-rich-item-renderer #content ytd-rich-grid-media:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
 ytd-rich-grid-renderer #contents ytd-rich-item-renderer #content ytd-rich-grid-media #dismissible #thumbnail ytd-thumbnail #thumbnail {
     border-radius: unset !important;
 }
@@ -151,6 +121,9 @@ ytd-rich-grid-renderer #contents ytd-rich-section-renderer #content ytd-rich-she
     margin-bottom: 8px !important;
     border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+ytd-rich-grid-renderer #contents ytd-rich-section-renderer #content ytd-rich-shelf-renderer #dismissible .button-container {
+    display: none !important;
 }
 ytd-rich-grid-renderer #contents ytd-rich-section-renderer #content ytd-rich-shelf-renderer #dismissible #contents ytd-rich-item-renderer[is-shelf-item] {
     display: block !important;
@@ -199,8 +172,27 @@ ytd-section-list-renderer #contents ytd-item-section-renderer #contents ytd-grid
 
 /* ---------------------------------------------------------------------------------------------------- */
 
-ytd-player#ytd-player { border-radius: unset !important; }
-ytd-player .ytp-left-controls .ytp-live-badge { margin-left: 5px !important; }
+ytd-player#ytd-player {
+    border-radius: unset !important;
+}
+
+ytd-player :is(.ytp-volume-panel:hover, .ytp-chrome-controls button:hover) {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+ytd-player .ytp-chrome-bottom .ytp-heat-map-container {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+:is(ytd-player, div#player) .ytp-left-controls .ytp-live-badge {
+    margin-left: 5px !important;
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
+}
+
+ytd-player .ytp-left-controls .ytp-chapter-container .ytp-chapter-title-content {
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
+}
+
 ytd-player .ytp-left-controls .ytp-prev-button,
 ytd-player .ytp-left-controls .ytp-next-button,
 ytd-player .ytp-right-controls #toggleChat,
@@ -208,9 +200,11 @@ ytd-player .ytp-right-controls #toggleChatOverVideo,
 ytd-player .ytp-right-controls #toggleChatSide,
 ytd-player .ytp-right-controls .ytp-subtitles-button,
 ytd-player .ytp-right-controls .ytp-miniplayer-button,
-ytd-player .ytp-right-controls .ytp-button[data-tooltip-target-id="ytp-autonav-toggle-button"] {
+ytd-player .ytp-right-controls .ytp-button[data-tooltip-target-id="ytp-autonav-toggle-button"],
+ytd-player .ytp-gradient-bottom {
     display: none !important;
 }
+
 
 /* ---------------------------------------------------------------------------------------------------- */
 
@@ -224,7 +218,7 @@ ytd-watch-metadata like-button-view-model button { border-radius: 18px 18px 18px
 ytd-watch-metadata like-button-view-model button[aria-pressed="true"] { border: 2px solid #f1f1f1; }
 ytd-watch-metadata dislike-button-view-model { display: none !important; }
 
-ytd-watch-metadata button-view-model:has(${title_ytdWatchMetadata}),
+ytd-watch-metadata button-view-model:has(${title_ytd_watch_metadata}),
 ytd-watch-metadata ytd-download-button-renderer ytd-button-renderer {
     width: 36px !important;
 }
