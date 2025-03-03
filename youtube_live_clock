@@ -20,6 +20,7 @@ const css_video = `
     display: none !important;
 }
 
+.ytp-tooltip-title,
 .ytp-tooltip-text {
     text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black !important;
     font-size: 14px !important;
@@ -57,6 +58,7 @@ let element_on_video = null;
 let html5_video_player = null;
 let html5_main_video = null;
 let ytd_watch_info_text = null;
+let ytp_time_duration = null;
 
 function wait_element(selector) {
     return new Promise((resolve) => {
@@ -94,10 +96,10 @@ function update_tooltip_text() {
             const rewind_time = convert_rewind_time(textContent);
             const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate;
             if (rewind_time > 0) {
-                ytp_tooltip_text.textContent = `${textContent} / ${microformat.duration}\n` + Formatter.date(start_date, rewind_time);
+                ytp_tooltip_text.textContent = `${textContent} / ${ytp_time_duration.textContent}\n` + Formatter.date(start_date, rewind_time);
             }
             else {
-                const secondsFromStart = Math.floor((Date.now() - Date.parse(start_date)) / 1000) + rewind_time;
+                const secondsFromStart = Math.round((Date.now() - Date.parse(start_date)) / 1000) + rewind_time;
                 ytp_tooltip_text.textContent = `${Formatter.time(secondsFromStart)} / ${textContent}\n` + Formatter.date(start_date, secondsFromStart);
             }
         }
@@ -131,7 +133,7 @@ function update_text_info() {
     const view_count = live_latency ? ytd_watch_info_text?.viewCountProps?.numberText : (Number(microformat.interactionCount) || '').toLocaleString();
 
     text_info['time-current'] = Formatter.time(current_time);
-    text_info['time-duration'] = !live_latency ? ` / ${microformat.duration}` : '';
+    text_info['time-duration'] = !live_latency ? ` / ${ytp_time_duration.textContent}` : '';
     text_info['status-live-latency'] = live_latency ? `(L/${live_latency})` : '';
     text_info['status-buffer-health'] = buffer_health ? `(B/${buffer_health})` : '';
     text_info['status-view-count'] = view_count ? `(V/${view_count})` : '';
@@ -148,7 +150,8 @@ async function get_video_microformat() {
     try {
         if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
             const microformat_script = await wait_element('#microformat script');
-            return JSON.parse(microformat_script.textContent);
+            const json = JSON.parse(microformat_script.textContent);
+            return json;
         }
         else if (location.href.includes('https://www.youtube.com/embed/')) {
             // For test
@@ -167,7 +170,6 @@ async function get_video_microformat() {
             const player_microformat_renderer = (await response.json()).microformat.playerMicroformatRenderer;
 
             return {
-                "duration": `PT${player_microformat_renderer.lengthSeconds}S`,
                 "interactionCount": player_microformat_renderer.viewCount,
                 "name": player_microformat_renderer.title.simpleText,
                 "thumbnailUrl": [ player_microformat_renderer.thumbnail.thumbnails?.[0].url ],
@@ -200,17 +202,17 @@ function change_volume_on_wheel(e) {
             html5_video_player.unMute();
         }
 
-        const ytpBezel = document.querySelector('.ytp-bezel');
-        const ytpBezelText = document.querySelector('.ytp-bezel-text');
-        if (ytpBezelText && ytpBezel) {
-            ytpBezelText.textContent = `${html5_video_player.getVolume()}%`;
-            ytpBezelText.parentElement.parentElement.setAttribute('class', '');
-            ytpBezelText.parentElement.parentElement.style.display = '';
-            ytpBezel.style.display = 'none';
+        const ytp_bezel = document.querySelector('.ytp-bezel');
+        const ytp_bezel_text = document.querySelector('.ytp-bezel-text');
+        if (ytp_bezel_text && ytp_bezel) {
+            ytp_bezel_text.textContent = `${html5_video_player.getVolume()}%`;
+            ytp_bezel_text.parentElement.parentElement.setAttribute('class', '');
+            ytp_bezel_text.parentElement.parentElement.style.display = '';
+            ytp_bezel.style.display = 'none';
             clearTimeout(timeoutid);
             timeoutid = setTimeout(() => {
-                ytpBezelText.parentElement.parentElement.style.display = 'none';
-                ytpBezel.style.display = '';
+                ytp_bezel_text.parentElement.parentElement.style.display = 'none';
+                ytp_bezel.style.display = '';
             }, 500);
         }
     }
@@ -227,37 +229,58 @@ function change_clock_on_video_bottom() {
 
 async function main() {
     try {
+        console.log('[Live Clock] add css');
         add_style(css_video);
 
+        console.log('[Live Clock] get microformat');
         microformat = await get_video_microformat();
 
+        console.log('[Live Clock] add element_on_controller');
         element_on_controller = create_span('ytp-time-on-control');
+        console.log('[Live Clock] get ytp_time_wrapper');
         const ytp_time_wrapper = await wait_element('.ytp-time-wrapper');
+        console.log('[Live Clock] append element_on_controller');
         ytp_time_wrapper.appendChild(element_on_controller);
 
+        console.log('[Live Clock] get ytp_time_current');
         const ytp_time_current = await wait_element('.ytp-time-current');
+        console.log('[Live Clock] get ytp_time_separator');
         const ytp_time_separator = await wait_element('.ytp-time-separator');
-        const ytp_time_duration = await wait_element('.ytp-time-duration');
+        console.log('[Live Clock] get ytp_time_duration');
+        ytp_time_duration = await wait_element('.ytp-time-duration');
+        console.log('[Live Clock] hide ytp_time_current/separator/duration');
         [ytp_time_current, ytp_time_separator, ytp_time_duration].forEach((e) => { e.style.display = 'none' });
-        microformat.duration = ytp_time_duration.textContent;
 
+        console.log('[Live Clock] get html5_video_player');
         html5_video_player = await wait_element('.html5-video-player');
 
+        console.log('[Live Clock] add element_on_video');
         element_on_video = create_span('ytp-time-on-video');
         element_on_video.textContent = '( ^)o(^ )';
+        console.log('[Live Clock] get html5_main_video');
         html5_main_video = await wait_element('.html5-main-video');
+        console.log('[Live Clock] append element_on_video');
         html5_main_video.after(element_on_video);
+        console.log('[Live Clock] obseve html5_main_video with change_clock_on_video_bottom');
         new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true });
 
         if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
+            console.log('[Live Clock] get ytd_watch_info_text');
             ytd_watch_info_text = await wait_element('#ytd-watch-info-text');
         }
 
-        html5_main_video.addEventListener('timeupdate', update_text_info, { passive: true });
-        html5_main_video.addEventListener('volumechange', update_tooltip_text, { passive: true });
-        html5_main_video.addEventListener('wheel', change_volume_on_wheel, { passive: true });
+        console.log('[Live Clock] addEventListener html5_main_video with update_text_info at "timeupdate"');
+        html5_main_video.addEventListener('timeupdate', update_text_info);
 
+        console.log('[Live Clock] addEventListener html5_main_video with update_tooltip_text "volumechange"');
+        html5_main_video.addEventListener('volumechange', update_tooltip_text);
+
+        console.log('[Live Clock] addEventListener html5_main_video with change_volume_on_wheel "wheel"');
+        html5_main_video.addEventListener('wheel', change_volume_on_wheel);
+
+        console.log('[Live Clock] get ytp_tooltip_text_wrapper');
         const ytp_tooltip_text_wrapper = await wait_element('.ytp-tooltip-text-wrapper');
+        console.log('[Live Clock] obseve ytp_tooltip_text_wrapper with update_tooltip_text');
         new MutationObserver(update_tooltip_text).observe(ytp_tooltip_text_wrapper, { attributes: true, subtree: true });
     }
     catch (e) {
@@ -265,17 +288,6 @@ async function main() {
     }
 }
 
-if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
-    document.addEventListener('yt-navigate-finish', main, { once: true });
-}
-else if (location.href.includes('https://www.youtube.com/embed/')) {
-    main();
-}
-else {
-    console.log("--------------------------------------------------");
-    console.log(location.href)
-    console.log("--------------------------------------------------");
-}
 
 class Formatter {
     static abbr = {
@@ -296,3 +308,14 @@ class Formatter {
     }
 }
 
+if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
+    document.addEventListener('yt-navigate-finish', main);
+}
+else if (location.href.includes('https://www.youtube.com/embed/')) {
+    main();
+}
+else {
+    console.log("--------------------------------------------------");
+    console.log(location.href)
+    console.log("--------------------------------------------------");
+}
