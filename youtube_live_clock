@@ -5,14 +5,341 @@
 // @match       https://www.youtube.com/watch?v=*
 // @match       https://www.youtube.com/live/*
 // @match       https://www.youtube.com/embed/*
-// @grant       none
-// @version     1.0.1
+// @grant       GM_registerMenuCommand
+// @grant       GM_setValue
+// @grant       GM_getValue
+// @version     1.0.2
 // @author      Nekone
 // @description 2024/6/3 下午3:47:05
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
 // ==/UserScript==
 
 'use strict'
+
+const text_info = {
+    'time-current': '',
+    'time-separator': '',
+    'time-duration': '',
+    'status-live-latency': '',
+    'status-buffer-health': '',
+    'status-view-count': '',
+    'time-date': '',
+    'time-now': '',
+    'video-playbackrate': '',
+    'video-volume': '',
+    'video-quality': '',
+    'codecs-video': '',
+    'codecs-audio': '',
+}
+
+const text_prefix = {
+    'time-current': '',
+    'time-separator': '',
+    'time-duration': '',
+    'status-live-latency': '(L/',
+    'status-buffer-health': '(B/',
+    'status-view-count': '(V/',
+    'time-date': '(',
+    'time-now': '[',
+    'video-playbackrate': '',
+    'video-volume': '',
+    'video-quality': '',
+    'codecs-video': '',
+    'codecs-audio': '',
+
+}
+const text_postfix = {
+    'time-current': '',
+    'time-separator': '',
+    'time-duration': '',
+    'status-live-latency': ')',
+    'status-buffer-health': ')',
+    'status-view-count': ')',
+    'time-date': ')',
+    'time-now': ']',
+    'video-playbackrate': 'x',
+    'video-volume': '%',
+    'video-quality': '',
+    'codecs-video': '',
+    'codecs-audio': '',
+}
+
+let text_pattern_on_controller = `{time-current} {time-separator} {time-duration} {time-date} [{codecs-video} / {codecs-audio}]`;
+let text_pattern_on_video = `{time-current} {time-separator} {time-duration} {status-live-latency} {status-buffer-health} {status-view-count} {time-date} {time-now} ({video-playbackrate}/{video-volume}/{video-quality})`;
+
+const css_setting = `
+
+.live-clock-wrapper {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    z-index: 9999;
+    display: flex;
+    align-content: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.live-clock-menu {
+    background-color: #F3F3F3;
+    border: 1px solid #CCCCCC;
+    border-radius: 10px;
+    width: 888px;
+}
+
+.live-clock-menu-title {
+    display: flex;
+    justify-content: space-between;
+    font-size: 20px;
+    margin: 10px 20px;
+}
+
+.live-clock-menu-save {
+    background-color: #1DA1F2;
+    color: #FFFFFF;
+    padding: 0px 20px;
+    border-radius: 100px;
+    cursor: pointer;
+    font-size: 18px;
+}
+.live-clock-menu-save:hover {
+    background-color: rgba(29, 161, 242, 0.9);
+}
+
+.live-clock-content-div {
+    margin: 10px;
+    border: 1px solid #CCCCCC;
+    border-radius: 5px;
+}
+
+.live-clock-pattern-on-video {
+    font-size: 18px;
+    margin: 10px 15px;
+}
+
+.live-clock-pattern-textarea {
+    width: -webkit-fill-available !important;
+    min-height: 50px;
+    font-size: 14px;
+}
+
+.live-clock-pattern-preview-div {
+    display: flex;
+    width: -webkit-fill-available;
+}
+
+.live-clock-pattern-preview-button {
+    background-color: #1DA1F2;
+    color: #FFFFFF;
+    padding: 0 10px;
+    border-radius: 100px;
+    min-width: fit-content;
+    cursor: pointer;
+    font-size: 18px;
+    margin-right: 2px;
+}
+.live-clock-pattern-preview-button :hover {
+    background-color: rgba(29, 161, 242, 0.9);
+}
+
+.live-clock-pattern-preview-display {
+    font-size: 14px;
+    width: -webkit-fill-available;
+}
+
+.live-clock-pattern-tag-div {
+    display: flex;
+    flex-direction: column;
+    margin: 10px;
+}
+
+.live-clock-pattern-tag-list {
+    display: flex;
+}
+
+.live-clock-pattern-tag-button {
+    color: #1DA1F2;
+    padding: 2px 10px;
+    border-radius: 10px;
+    border: 1px solid #1DA1F2;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 14px;
+}
+.live-clock-pattern-tag-button:hover {
+    background-color: rgba(29, 161, 242, 0.1);
+}
+
+.live-clock-pattern-tag-input {
+    width: 50px;
+    justify-self: center;
+    display: block;
+}
+
+table {
+    border-collapse: collapse;
+    border: 2px solid rgb(140 140 140);
+    font-size: 14px;
+    margin: 10px 15px;
+    width: -webkit-fill-available;
+
+    thead {
+        background-color: rgb(228 240 245);
+    }
+    tbody > tr:nth-of-type(even) {
+        background-color: rgb(237 238 242);
+    }
+    tr, th, td {
+        border: 1px solid rgb(160 160 160);
+        padding: 4px;
+    }
+}
+
+
+`;
+
+(async function register_menu() {
+    try {
+        const language = {
+            'zh-TW': {
+                title: 'Live Clock 顯示設定',
+                save: '儲存',
+                review: '預覽',
+                pattern: '【影片上】的顯示規則',
+                table_head: ['說明', '選項', '前綴', '參考值', '後綴', '預覽'],
+                table_description: {
+                    'time-current': '播放進度',
+                    'time-separator': '分隔符號 (Live 不適用)',
+                    'time-duration': '總時長 (Live 不適用)',
+                    'status-live-latency': '實況延遲 (太久會變 0.00s)',
+                    'status-buffer-health': '緩衝大小',
+                    'status-view-count': '觀看數/觀眾數',
+                    'time-date': '實況開始時間+播放進度',
+                    'time-now': '本機時間',
+                    'video-playbackrate': '播放速度',
+                    'video-volume': '音量',
+                    'video-quality': '畫質',
+                    'codecs-video': '視訊編碼格式',
+                    'codecs-audio': '音訊編碼格式',
+                },
+            }
+        }[navigator.language];
+
+        add_style(css_setting, 'live-clock-setting');
+
+        async function register_menu_command_callback() {
+            const $element = (parent, tag, content, css_class) => {
+                const element = document.createElement(tag);
+                if (tag == 'input') { element.value = content || ''; }
+                else { element.textContent = content || ''; }
+                if (css_class) { css_class.split(' ').forEach((c) => { element.classList.add(c) }); }
+                parent.appendChild(element);
+                return element;
+            };
+
+            const text_info_sample = {
+                'time-current': '1:23:45',
+                'time-separator': '/',
+                'time-duration': '11:54:59',
+                'status-live-latency': '4.45s',
+                'status-buffer-health': '4.45s',
+                'status-view-count': '114,514',
+                'time-date': '2025/03/14 (五) 19:01:06',
+                'time-now': Date().toString().split(' ')[4],
+                'video-playbackrate': '1.25',
+                'video-volume': '80',
+                'video-quality': '1080p60',
+                'codecs-video': 'vp09 (303)',
+                'codecs-audio': 'mp4a (140)',
+            }
+
+            const menu_wapper = $element(document.body, 'div', null, 'live-clock-wrapper');
+            let menu_wapper_close = null;
+            menu_wapper.onmousedown = (e) => { menu_wapper_close = e.target == menu_wapper; };
+            menu_wapper.onmouseup = (e) => { if (menu_wapper_close && e.target == menu_wapper) menu_wapper.remove(); };
+
+            const div_menu = $element(menu_wapper, 'div', null, 'live-clock-menu');
+            const span_title = $element(div_menu, 'span', language.title, 'live-clock-menu-title');
+
+            const div_content = $element(div_menu, 'div', null, 'live-clock-content-div');
+            const div_pattern_on_video = $element(div_content, 'div', language.pattern, 'live-clock-pattern-on-video');
+            const textarea_pattern_on_video = $element(div_pattern_on_video, 'textarea', await GM_getValue('filename', text_pattern_on_video), 'live-clock-pattern-textarea');
+            const div_pattern_preview = $element(div_pattern_on_video, 'div', null, 'live-clock-pattern-preview-div');
+            const button_pattern_preview = $element(div_pattern_preview, 'button', language.review, 'live-clock-pattern-preview-button');
+            const input_pattern_display = $element(div_pattern_preview, 'input', null, 'live-clock-pattern-preview-display');
+            button_pattern_preview.onclick = () => {
+                input_pattern_display.value = textarea_pattern_on_video.value.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, key) => `${text_prefix[key]}${text_info_sample[key]}${text_postfix[key]}`);
+            }
+            button_pattern_preview.click();
+
+            const update_input = (key, prefix, postfix, preview) => {
+                text_prefix[key] = prefix.value;
+                text_postfix[key] = postfix.value;
+                preview.textContent = `${text_prefix[key]}${text_info_sample[key]}${text_postfix[key]}`;
+            }
+            const pattern_table = $element(div_content, 'table', null, null);
+            const thead = $element(pattern_table, 'thead', null, null);
+            const tbody = $element(pattern_table, 'tbody', null, null);
+            let td = null;
+            [language.table_head].concat(Object.keys(text_info)).forEach((key, index) => {
+                if (index == 0) {
+                    const tr = $element(thead, 'tr', null, null);
+                    key.forEach((e) => { $element(tr, 'th', e, null); });
+                }
+                else {
+                    const tr = $element(tbody, 'tr', null, null);
+
+                    td = $element(tr, 'td', null, null);
+                    const desc = $element(td, 'span', language.table_description[key], null);
+
+                    td = $element(tr, 'td', null, null);
+                    const button = $element(td, 'span', `{${key}}`, 'live-clock-pattern-tag-button');
+
+                    td = $element(tr, 'td', null, null);
+                    const prefix = $element(td, 'input', text_prefix[key], 'live-clock-pattern-tag-input');
+
+                    td = $element(tr, 'td', null, null);
+                    const sample = $element(td, 'span', text_info_sample[key], null);
+
+                    td = $element(tr, 'td', null, null);
+                    const postfix = $element(td, 'input', text_postfix[key], 'live-clock-pattern-tag-input');
+
+                    td = $element(tr, 'td', null, null);
+                    const preview = $element(td, 'span', `${text_prefix[key]}${text_info_sample[key]}${text_postfix[key]}`, null);
+
+                    prefix.oninput = () => { update_input(key, prefix, postfix, preview) };
+                    postfix.oninput = () => { update_input(key, prefix, postfix, preview) };
+                }
+            });
+
+            textarea_pattern_on_video.selectionStart = textarea_pattern_on_video.value.length;
+            pattern_table.querySelectorAll('.live-clock-pattern-tag-button').forEach((tag) => {
+                tag.onclick = () => {
+                    const selection_start = textarea_pattern_on_video.selectionStart;
+                    const selection_end = textarea_pattern_on_video.selectionEnd;
+                    textarea_pattern_on_video.value = textarea_pattern_on_video.value.substring(0, selection_start) + tag.innerText + textarea_pattern_on_video.value.substring(selection_end);
+                    textarea_pattern_on_video.selectionStart = selection_start + tag.innerText.length;
+                    textarea_pattern_on_video.selectionEnd = selection_start + tag.innerText.length;
+                    textarea_pattern_on_video.focus();
+                };
+            });
+
+
+            const btn_save = $element(span_title, 'button', language.save, 'live-clock-menu-save');
+            btn_save.onclick = async () => {
+                await GM_setValue('filename', textarea_pattern_on_video.value);
+                menu_wapper.remove();
+            };
+        }
+        GM_registerMenuCommand(language.title, register_menu_command_callback);
+    }
+    catch (e) {
+        console.log(e);
+    }
+})();
+
+
 
 const css_video = `
 
@@ -34,6 +361,7 @@ const css_video = `
     line-height: 1.3 !important;
 }
 
+.ytp-title-on-video,
 .ytp-time-on-video {
     text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black !important;
     font-size: 14px !important;
@@ -44,16 +372,18 @@ const css_video = `
 
 `;
 
-function add_style(css) {
+
+function add_style(css, id) {
     const style = document.createElement('style');
-    style.setAttribute('id', 'live-clock');
+    style.setAttribute('id', id);
     style.textContent = css;
     document.head.appendChild(style);
 }
 
 let microformat = null;
-let element_on_controller = null;
-let element_on_video = null;
+let element_time_on_controller = null;
+let element_time_on_video = null;
+let element_title_on_video = null;
 
 let html5_video_player = null;
 let html5_main_video = null;
@@ -73,11 +403,12 @@ function wait_element(selector) {
     });
 }
 
-function create_span(selector) {
+function create_span(selector, text) {
     let element = document.querySelector(`.${selector}`);
     if (!element) {
         element = document.createElement('span');
         element.setAttribute('class', selector);
+        element.textContent = text || '';
     }
     return element;
 }
@@ -109,40 +440,35 @@ function update_tooltip_text() {
     }
 }
 
-let text_info = {
-    'time-current': '',
-    'time-duration': '',
-    'status-live-latency': '',
-    'status-buffer-health': '',
-    'status-view-count': '',
-    'time-date': '',
-    'time-now': '',
-    'playbackrate-volume-quality':'',
-}
 function update_text_info() {
     const current_time = html5_main_video.currentTime;
     const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate;
 
     const video_stats = Object.assign({}, html5_video_player.getStatsForNerds(), html5_video_player.getVideoStats());
     const live_latency = video_stats['live_latency_secs'];
-    const buffer_health = video_stats['buffer_health_seconds'];
-    const video_format = video_stats['optimal_format'];
+    const buffer_health = video_stats['buffer_health_seconds'].replace(' ', '');
+    const codecs = video_stats['codecs'].split(' / ').map(e => e.split('.').shift()).map(e => e.split(' ').shift());
 
-    const volume = html5_video_player.getVolume();
-    const playbackrate = html5_main_video.playbackRate.toFixed(2);
     const view_count = live_latency ? ytd_watch_info_text?.viewCountProps?.numberText : (Number(microformat.interactionCount) || '').toLocaleString();
 
     text_info['time-current'] = Formatter.time(current_time);
-    text_info['time-duration'] = !live_latency ? ` / ${ytp_time_duration.textContent}` : '';
-    text_info['status-live-latency'] = live_latency ? `(L/${live_latency})` : '';
-    text_info['status-buffer-health'] = buffer_health ? `(B/${buffer_health})` : '';
-    text_info['status-view-count'] = view_count ? `(V/${view_count})` : '';
+    text_info['time-separator'] = !live_latency ? '/' : '';
+    text_info['time-duration'] = !live_latency ? ytp_time_duration.textContent : '';
+    text_info['status-live-latency'] = live_latency || '';
+    text_info['status-buffer-health'] = buffer_health || '';
+    text_info['status-view-count'] = view_count || '';
     text_info['time-date'] = live_latency ? Formatter.date(null, html5_video_player.getMediaReferenceTime()) : Formatter.date(start_date, current_time);
-    text_info['time-now'] = `[${Date().toString().split(' ')[4]}]`; // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
-    text_info['playbackrate-volume-quality'] = `(${playbackrate}x/${volume}%/${video_format})`;
+    text_info['time-now'] = Date().toString().split(' ')[4]; // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
+    text_info['video-playbackrate'] = html5_main_video.playbackRate.toFixed(2);
+    text_info['video-volume'] = html5_video_player.getVolume();
+    text_info['video-quality'] = video_stats['optimal_format'];
+    text_info['codecs-video'] = `${codecs[0]} (${video_stats['fmt']})`;
+    text_info['codecs-audio'] = `${codecs[1]} (${video_stats['afmt']})`;
 
-    if (element_on_controller) element_on_controller.textContent = `${text_info['time-current']}${text_info['time-duration']} ${text_info['time-date']}`;
-    if (element_on_video) element_on_video.textContent = Object.values(text_info).join(' ');
+    Object.keys(text_info).forEach((key) => { text_info[key] = text_info[key] ? `${text_prefix[key]}${text_info[key]}${text_postfix[key]}` : ''; });
+
+    if (element_time_on_controller) element_time_on_controller.textContent = text_pattern_on_controller.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info[name]);
+    if (element_time_on_video) element_time_on_video.textContent = text_pattern_on_video.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info[name]);
 }
 
 
@@ -222,25 +548,29 @@ function change_clock_on_video_bottom() {
     const video_height = html5_main_video.offsetHeight;
     const video_left = html5_main_video.offsetLeft;
     const video_top = html5_main_video.offsetTop;
-    const text_height = element_on_video.getBoundingClientRect().height;
-    element_on_video.style.left = `${video_left + 2}px`;
-    element_on_video.style.top = `${video_height + video_top - text_height + (video_top < text_height ? video_top : text_height + 2)}px`;
+    const text_height_time = element_time_on_video.getBoundingClientRect().height;
+    element_time_on_video.style.left = `${video_left + 2}px`;
+    element_time_on_video.style.top = `${video_height + video_top - text_height_time + (video_top < text_height_time ? video_top : text_height_time + 2)}px`;
+
+    const text_height_title = element_title_on_video.getBoundingClientRect().height;
+    element_title_on_video.style.left = `${video_left + 2}px`;
+    element_title_on_video.style.top = `${video_top < text_height_time ? 0 : video_top - text_height_time - 2}px`;
 }
 
 async function main() {
     try {
         console.log('[Live Clock] add css');
-        add_style(css_video);
+        add_style(css_video, 'live-clock');
 
         console.log('[Live Clock] get microformat');
         microformat = await get_video_microformat();
 
-        console.log('[Live Clock] add element_on_controller');
-        element_on_controller = create_span('ytp-time-on-control');
+        console.log('[Live Clock] add element_time_on_controller');
+        element_time_on_controller = create_span('ytp-time-on-control');
         console.log('[Live Clock] get ytp_time_wrapper');
         const ytp_time_wrapper = await wait_element('.ytp-time-wrapper');
-        console.log('[Live Clock] append element_on_controller');
-        ytp_time_wrapper.appendChild(element_on_controller);
+        console.log('[Live Clock] append element_time_on_controller');
+        ytp_time_wrapper.appendChild(element_time_on_controller);
 
         console.log('[Live Clock] get ytp_time_current');
         const ytp_time_current = await wait_element('.ytp-time-current');
@@ -254,19 +584,28 @@ async function main() {
         console.log('[Live Clock] get html5_video_player');
         html5_video_player = await wait_element('.html5-video-player');
 
-        console.log('[Live Clock] add element_on_video');
-        element_on_video = create_span('ytp-time-on-video');
-        element_on_video.textContent = '( ^)o(^ )';
         console.log('[Live Clock] get html5_main_video');
         html5_main_video = await wait_element('.html5-main-video');
-        console.log('[Live Clock] append element_on_video');
-        html5_main_video.after(element_on_video);
+
+        console.log('[Live Clock] add element_time_on_video');
+        element_time_on_video = create_span('ytp-time-on-video', '( ^)o(^ )');
+        console.log('[Live Clock] append element_time_on_video');
+        html5_main_video.after(element_time_on_video);
         console.log('[Live Clock] obseve html5_main_video with change_clock_on_video_bottom');
         new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true });
 
         if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
             console.log('[Live Clock] get ytd_watch_info_text');
             ytd_watch_info_text = await wait_element('#ytd-watch-info-text');
+
+            console.log('[Live Clock] get ytd_watch_metadata_title');
+            const ytd_watch_metadata_title = await wait_element('ytd-watch-metadata #title h1 yt-formatted-string');
+            console.log('[Live Clock] add element_title_on_video');
+            element_title_on_video = create_span('ytp-title-on-video', ytd_watch_metadata_title.textContent);
+            console.log('[Live Clock] append element_title_on_video');
+            html5_main_video.after(element_title_on_video);
+            console.log('[Live Clock] obseve ytd_watch_metadata_title with arrow function');
+            new MutationObserver(() => { element_title_on_video.textContent = ytd_watch_metadata_title.textContent }).observe(ytd_watch_metadata_title, { attributes: true, childList: true, subtree: true });
         }
 
         console.log('[Live Clock] addEventListener html5_main_video with update_text_info at "timeupdate"');
@@ -288,7 +627,6 @@ async function main() {
     }
 }
 
-
 class Formatter {
     static abbr = {
         week: { Sun: '日', Mon: '一', Tue: '二', Wed: '三', Thu: '四', Fri: '五', Sat: '六' },
@@ -304,7 +642,7 @@ class Formatter {
     static date(start_date, seconds) {
         const present_time = new Date((start_date ? Date.parse(start_date) : 0) + Math.floor(seconds * 1000));
         const [week, month, day, year, time] = present_time.toString().split(' ');
-        return ` (${year}/${this.abbr.month[month]}/${day} (${this.abbr.week[week]}) ${time})`;
+        return `${year}/${this.abbr.month[month]}/${day} (${this.abbr.week[week]}) ${time}`;
     }
 }
 
