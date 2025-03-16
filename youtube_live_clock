@@ -8,7 +8,7 @@
 // @grant       GM_registerMenuCommand
 // @grant       GM_setValue
 // @grant       GM_getValue
-// @version     1.0.2
+// @version     1.0.3
 // @author      Nekone
 // @description 2024/6/3 下午3:47:05
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
@@ -16,56 +16,87 @@
 
 'use strict'
 
-const text_info = {
-    'time-current': '',
-    'time-separator': '',
-    'time-duration': '',
-    'status-live-latency': '',
-    'status-buffer-health': '',
-    'status-view-count': '',
-    'time-date': '',
-    'time-now': '',
-    'video-playbackrate': '',
-    'video-volume': '',
-    'video-quality': '',
-    'codecs-video': '',
-    'codecs-audio': '',
-}
+const language = {
+    'zh-TW': {
+        title: 'Live Clock 顯示設定',
+        save: '儲存',
+        review: '預覽',
+        pattern: '【影片上】的顯示規則',
+        table_head: ['說明', '選項', '前綴', '參考值', '後綴', '預覽'],
+        table_description: {
+            'time-current': '播放進度',
+            'time-separator': '分隔符號 (Live 不適用)',
+            'time-duration': '總時長 (Live 不適用)',
+            'status-live-latency': '實況延遲 (太久會變 0.00s)',
+            'status-buffer-health': '緩衝大小',
+            'status-view-count': '觀看數/觀眾數',
+            'time-date': '實況開始時間+播放進度',
+            'time-now': '本機時間',
+            'video-playbackrate': '播放速度',
+            'video-volume': '音量',
+            'video-quality': '畫質',
+            'codecs-video': '視訊編碼格式',
+            'codecs-audio': '音訊編碼格式',
+        },
+    }
+}[navigator.language];
 
-const text_prefix = {
-    'time-current': '',
-    'time-separator': '',
-    'time-duration': '',
-    'status-live-latency': '(L/',
-    'status-buffer-health': '(B/',
-    'status-view-count': '(V/',
-    'time-date': '(',
-    'time-now': '[',
-    'video-playbackrate': '',
-    'video-volume': '',
-    'video-quality': '',
-    'codecs-video': '',
-    'codecs-audio': '',
+const GM_keys = {
+    pattern_on_video: 'pattern_on_video',
+    pattern_on_controller: 'pattern_on_controller',
+    text_info_prefix: 'text_info_prefix',
+    text_info_postfix: 'text_info_postfix',
+};
 
+const default_values = {
+    pattern_on_video: `{time-current} {time-separator} {time-duration} {status-live-latency} {status-buffer-health} {status-view-count} {time-date} {time-now} ({video-playbackrate}/{video-volume}/{video-quality})`,
+    pattern_on_controller: `{time-current} {time-separator} {time-duration} {time-date} [{codecs-video} / {codecs-audio}]`,
+    text_info_prefix: {
+        'time-current': '',
+        'time-separator': '',
+        'time-duration': '',
+        'status-live-latency': '(L/',
+        'status-buffer-health': '(B/',
+        'status-view-count': '(V/',
+        'time-date': '(',
+        'time-now': '[',
+        'video-playbackrate': '',
+        'video-volume': '',
+        'video-quality': '',
+        'codecs-video': '',
+        'codecs-audio': '',
+    },
+    text_info_postfix: {
+        'time-current': '',
+        'time-separator': '',
+        'time-duration': '',
+        'status-live-latency': ')',
+        'status-buffer-health': ')',
+        'status-view-count': ')',
+        'time-date': ')',
+        'time-now': ']',
+        'video-playbackrate': 'x',
+        'video-volume': '%',
+        'video-quality': '',
+        'codecs-video': '',
+        'codecs-audio': '',
+    },
+    text_info_sample: {
+        'time-current': '1:23:45',
+        'time-separator': '/',
+        'time-duration': '11:54:59',
+        'status-live-latency': '4.45s',
+        'status-buffer-health': '4.45s',
+        'status-view-count': '114,514',
+        'time-date': '2025/03/14 (五) 19:01:06',
+        'time-now': Date().toString().split(' ')[4],
+        'video-playbackrate': '1.25',
+        'video-volume': '80',
+        'video-quality': '1080p60',
+        'codecs-video': 'vp09 (303)',
+        'codecs-audio': 'mp4a (140)',
+    }
 }
-const text_postfix = {
-    'time-current': '',
-    'time-separator': '',
-    'time-duration': '',
-    'status-live-latency': ')',
-    'status-buffer-health': ')',
-    'status-view-count': ')',
-    'time-date': ')',
-    'time-now': ']',
-    'video-playbackrate': 'x',
-    'video-volume': '%',
-    'video-quality': '',
-    'codecs-video': '',
-    'codecs-audio': '',
-}
-
-let text_pattern_on_controller = `{time-current} {time-separator} {time-duration} {time-date} [{codecs-video} / {codecs-audio}]`;
-let text_pattern_on_video = `{time-current} {time-separator} {time-duration} {status-live-latency} {status-buffer-health} {status-view-count} {time-date} {time-now} ({video-playbackrate}/{video-volume}/{video-quality})`;
 
 const css_setting = `
 
@@ -146,6 +177,8 @@ const css_setting = `
 .live-clock-pattern-preview-display {
     font-size: 14px;
     width: -webkit-fill-available;
+    background: #FFFFFF;
+    color: #000000;
 }
 
 .live-clock-pattern-tag-div {
@@ -177,57 +210,35 @@ const css_setting = `
     display: block;
 }
 
-table {
+.live-clock-table {
     border-collapse: collapse;
     border: 2px solid rgb(140 140 140);
     font-size: 14px;
     margin: 10px 15px;
     width: -webkit-fill-available;
 
-    thead {
+    .live-clock-thead {
         background-color: rgb(228 240 245);
     }
-    tbody > tr:nth-of-type(even) {
+    .live-clock-tbody > tr:nth-of-type(even) {
         background-color: rgb(237 238 242);
     }
-    tr, th, td {
+    .live-clock-tr, .live-clock-th, .live-clock-td {
         border: 1px solid rgb(160 160 160);
         padding: 4px;
     }
 }
 
-
 `;
+
+let text_pattern_on_video = GM_getValue(GM_keys.pattern_on_video, default_values.pattern_on_video);
+let text_pattern_on_controller = GM_getValue(GM_keys.pattern_on_controller, default_values.pattern_on_controller);
+let text_info_prefix = GM_getValue(GM_keys.text_info_prefix, default_values.text_info_prefix);
+let text_info_postfix = GM_getValue(GM_keys.text_info_postfix, default_values.text_info_postfix);
+let text_info_value = {}; Object.keys(default_values.text_info_sample).forEach((e) => { text_info_value[e] = ''; });
 
 (async function register_menu() {
     try {
-        const language = {
-            'zh-TW': {
-                title: 'Live Clock 顯示設定',
-                save: '儲存',
-                review: '預覽',
-                pattern: '【影片上】的顯示規則',
-                table_head: ['說明', '選項', '前綴', '參考值', '後綴', '預覽'],
-                table_description: {
-                    'time-current': '播放進度',
-                    'time-separator': '分隔符號 (Live 不適用)',
-                    'time-duration': '總時長 (Live 不適用)',
-                    'status-live-latency': '實況延遲 (太久會變 0.00s)',
-                    'status-buffer-health': '緩衝大小',
-                    'status-view-count': '觀看數/觀眾數',
-                    'time-date': '實況開始時間+播放進度',
-                    'time-now': '本機時間',
-                    'video-playbackrate': '播放速度',
-                    'video-volume': '音量',
-                    'video-quality': '畫質',
-                    'codecs-video': '視訊編碼格式',
-                    'codecs-audio': '音訊編碼格式',
-                },
-            }
-        }[navigator.language];
-
-        add_style(css_setting, 'live-clock-setting');
-
         async function register_menu_command_callback() {
             const $element = (parent, tag, content, css_class) => {
                 const element = document.createElement(tag);
@@ -238,21 +249,10 @@ table {
                 return element;
             };
 
-            const text_info_sample = {
-                'time-current': '1:23:45',
-                'time-separator': '/',
-                'time-duration': '11:54:59',
-                'status-live-latency': '4.45s',
-                'status-buffer-health': '4.45s',
-                'status-view-count': '114,514',
-                'time-date': '2025/03/14 (五) 19:01:06',
-                'time-now': Date().toString().split(' ')[4],
-                'video-playbackrate': '1.25',
-                'video-volume': '80',
-                'video-quality': '1080p60',
-                'codecs-video': 'vp09 (303)',
-                'codecs-audio': 'mp4a (140)',
-            }
+            text_pattern_on_video = await GM_getValue(GM_keys.pattern_on_video, default_values.pattern_on_video);
+            text_pattern_on_controller = await GM_getValue(GM_keys.pattern_on_controller, default_values.pattern_on_controller);
+            text_info_prefix = await GM_getValue(GM_keys.text_info_prefix, default_values.text_info_prefix);
+            text_info_postfix = await GM_getValue(GM_keys.text_info_postfix, default_values.text_info_postfix);
 
             const menu_wapper = $element(document.body, 'div', null, 'live-clock-wrapper');
             let menu_wapper_close = null;
@@ -264,49 +264,51 @@ table {
 
             const div_content = $element(div_menu, 'div', null, 'live-clock-content-div');
             const div_pattern_on_video = $element(div_content, 'div', language.pattern, 'live-clock-pattern-on-video');
-            const textarea_pattern_on_video = $element(div_pattern_on_video, 'textarea', await GM_getValue('filename', text_pattern_on_video), 'live-clock-pattern-textarea');
+            const textarea_pattern_on_video = $element(div_pattern_on_video, 'textarea', text_pattern_on_video, 'live-clock-pattern-textarea');
+
             const div_pattern_preview = $element(div_pattern_on_video, 'div', null, 'live-clock-pattern-preview-div');
             const button_pattern_preview = $element(div_pattern_preview, 'button', language.review, 'live-clock-pattern-preview-button');
             const input_pattern_display = $element(div_pattern_preview, 'input', null, 'live-clock-pattern-preview-display');
+            input_pattern_display.disabled = true;
             button_pattern_preview.onclick = () => {
-                input_pattern_display.value = textarea_pattern_on_video.value.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, key) => `${text_prefix[key]}${text_info_sample[key]}${text_postfix[key]}`);
+                input_pattern_display.value = textarea_pattern_on_video.value.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, key) => `${text_info_prefix[key]}${default_values.text_info_sample[key]}${text_info_postfix[key]}`);
             }
             button_pattern_preview.click();
 
             const update_input = (key, prefix, postfix, preview) => {
-                text_prefix[key] = prefix.value;
-                text_postfix[key] = postfix.value;
-                preview.textContent = `${text_prefix[key]}${text_info_sample[key]}${text_postfix[key]}`;
+                text_info_prefix[key] = prefix.value;
+                text_info_postfix[key] = postfix.value;
+                preview.textContent = `${text_info_prefix[key]}${default_values.text_info_sample[key]}${text_info_postfix[key]}`;
             }
-            const pattern_table = $element(div_content, 'table', null, null);
-            const thead = $element(pattern_table, 'thead', null, null);
-            const tbody = $element(pattern_table, 'tbody', null, null);
+            const pattern_table = $element(div_content, 'table', null, 'live-clock-table');
+            const thead = $element(pattern_table, 'thead', null, 'live-clock-thead');
+            const tbody = $element(pattern_table, 'tbody', null, 'live-clock-tbody');
             let td = null;
-            [language.table_head].concat(Object.keys(text_info)).forEach((key, index) => {
+            [language.table_head].concat(Object.keys(text_info_value)).forEach((key, index) => {
                 if (index == 0) {
-                    const tr = $element(thead, 'tr', null, null);
-                    key.forEach((e) => { $element(tr, 'th', e, null); });
+                    const tr = $element(thead, 'tr', null, 'live-clock-tr');
+                    key.forEach((e) => { $element(tr, 'th', e, 'live-clock-th'); });
                 }
                 else {
-                    const tr = $element(tbody, 'tr', null, null);
+                    const tr = $element(tbody, 'tr', null, 'live-clock-tr');
 
-                    td = $element(tr, 'td', null, null);
+                    td = $element(tr, 'td', null, 'live-clock-td');
                     const desc = $element(td, 'span', language.table_description[key], null);
 
-                    td = $element(tr, 'td', null, null);
+                    td = $element(tr, 'td', null, 'live-clock-td');
                     const button = $element(td, 'span', `{${key}}`, 'live-clock-pattern-tag-button');
 
-                    td = $element(tr, 'td', null, null);
-                    const prefix = $element(td, 'input', text_prefix[key], 'live-clock-pattern-tag-input');
+                    td = $element(tr, 'td', null, 'live-clock-td');
+                    const prefix = $element(td, 'input', text_info_prefix[key], 'live-clock-pattern-tag-input');
 
-                    td = $element(tr, 'td', null, null);
-                    const sample = $element(td, 'span', text_info_sample[key], null);
+                    td = $element(tr, 'td', null, 'live-clock-td');
+                    const sample = $element(td, 'span', default_values.text_info_sample[key], null);
 
-                    td = $element(tr, 'td', null, null);
-                    const postfix = $element(td, 'input', text_postfix[key], 'live-clock-pattern-tag-input');
+                    td = $element(tr, 'td', null, 'live-clock-td');
+                    const postfix = $element(td, 'input', text_info_postfix[key], 'live-clock-pattern-tag-input');
 
-                    td = $element(tr, 'td', null, null);
-                    const preview = $element(td, 'span', `${text_prefix[key]}${text_info_sample[key]}${text_postfix[key]}`, null);
+                    td = $element(tr, 'td', null, 'live-clock-td');
+                    const preview = $element(td, 'span', `${text_info_prefix[key]}${default_values.text_info_sample[key]}${text_info_postfix[key]}`, null);
 
                     prefix.oninput = () => { update_input(key, prefix, postfix, preview) };
                     postfix.oninput = () => { update_input(key, prefix, postfix, preview) };
@@ -318,28 +320,31 @@ table {
                 tag.onclick = () => {
                     const selection_start = textarea_pattern_on_video.selectionStart;
                     const selection_end = textarea_pattern_on_video.selectionEnd;
-                    textarea_pattern_on_video.value = textarea_pattern_on_video.value.substring(0, selection_start) + tag.innerText + textarea_pattern_on_video.value.substring(selection_end);
+                    textarea_pattern_on_video.value = textarea_pattern_on_video.value.substring(0, selection_start) + tag.textContent + textarea_pattern_on_video.value.substring(selection_end);
                     textarea_pattern_on_video.selectionStart = selection_start + tag.innerText.length;
                     textarea_pattern_on_video.selectionEnd = selection_start + tag.innerText.length;
                     textarea_pattern_on_video.focus();
                 };
             });
 
-
             const btn_save = $element(span_title, 'button', language.save, 'live-clock-menu-save');
             btn_save.onclick = async () => {
-                await GM_setValue('filename', textarea_pattern_on_video.value);
+                text_pattern_on_video = textarea_pattern_on_video.value
+                await GM_setValue(GM_keys.pattern_on_video, text_pattern_on_video);
+                await GM_setValue(GM_keys.pattern_on_controller, text_pattern_on_controller);
+                await GM_setValue(GM_keys.text_info_prefix, text_info_prefix);
+                await GM_setValue(GM_keys.text_info_postfix, text_info_postfix);
                 menu_wapper.remove();
             };
         }
+
+        add_style(css_setting, 'live-clock-setting');
         GM_registerMenuCommand(language.title, register_menu_command_callback);
     }
     catch (e) {
         console.log(e);
     }
 })();
-
-
 
 const css_video = `
 
@@ -371,7 +376,6 @@ const css_video = `
 }
 
 `;
-
 
 function add_style(css, id) {
     const style = document.createElement('style');
@@ -465,7 +469,7 @@ function update_text_info() {
     text_info['codecs-video'] = `${codecs[0]} (${video_stats['fmt']})`;
     text_info['codecs-audio'] = `${codecs[1]} (${video_stats['afmt']})`;
 
-    Object.keys(text_info).forEach((key) => { text_info[key] = text_info[key] ? `${text_prefix[key]}${text_info[key]}${text_postfix[key]}` : ''; });
+    Object.keys(text_info).forEach((key) => { text_info[key] = text_info[key] ? `${text_info_prefix[key]}${text_info[key]}${text_info_postfix[key]}` : ''; });
 
     if (element_time_on_controller) element_time_on_controller.textContent = text_pattern_on_controller.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info[name]);
     if (element_time_on_video) element_time_on_video.textContent = text_pattern_on_video.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info[name]);
@@ -552,9 +556,16 @@ function change_clock_on_video_bottom() {
     element_time_on_video.style.left = `${video_left + 2}px`;
     element_time_on_video.style.top = `${video_height + video_top - text_height_time + (video_top < text_height_time ? video_top : text_height_time + 2)}px`;
 
-    const text_height_title = element_title_on_video.getBoundingClientRect().height;
-    element_title_on_video.style.left = `${video_left + 2}px`;
-    element_title_on_video.style.top = `${video_top < text_height_time ? 0 : video_top - text_height_time - 2}px`;
+    const onYTLSTM = document.querySelector('body[data-ytlstm-theater-mode]')
+    if (onYTLSTM) {
+        const text_height_title = element_title_on_video.getBoundingClientRect().height;
+        element_title_on_video.style.left = `${video_left + 2}px`;
+        element_title_on_video.style.top = `${video_top < text_height_time ? 0 : video_top - text_height_time - 2}px`;
+        element_title_on_video.style.display = '';
+    }
+    else {
+        element_title_on_video.style.display = 'none';
+    }
 }
 
 async function main() {
