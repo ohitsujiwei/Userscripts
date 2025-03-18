@@ -24,19 +24,24 @@ const language = {
         pattern: '【影片上】的顯示規則',
         table_head: ['說明', '選項', '前綴', '參考值', '後綴', '預覽'],
         table_description: {
-            'time-current': '播放進度',
+            'time-current': '目前時間',
             'time-separator': '分隔符號 (Live 不適用)',
-            'time-duration': '總時長 (Live 不適用)',
-            'status-live-latency': '實況延遲 (太久會變 0.00s)',
+            'time-duration': '影片時長 (Live 不適用)',
+            'status-live-latency': '實況延遲(太久會變0.00s)ℹ️',
             'status-buffer-health': '緩衝大小',
-            'status-view-count': '觀看數/觀眾數',
-            'time-date': '實況開始時間+播放進度',
+            'status-view-count': '觀看數 / 觀眾數ℹ️',
+            'time-date': '實況開始時間+目前時間ℹ️',
             'time-now': '本機時間',
             'video-playbackrate': '播放速度',
             'video-volume': '音量',
             'video-quality': '畫質',
             'codecs-video': '視訊編碼格式',
             'codecs-audio': '音訊編碼格式',
+        },
+        option_description: {
+            'status-live-latency': '根據 YouTube Help Center，目前實況延遲有三個選項，取決於實況主設定：\n1. Normal latency\n2. Low latency (less than 10 seconds.)\n3. Ultra-low latency (less than 5 seconds.)',
+            'status-view-count': '嵌入影片 (embed) 只顯示【觀看數】\nP.S. Holodex 皆為嵌入影片。',
+            'time-date': '此選項為方便你各位找到準確的時間軸，範例如下：\n實況開始時間為【2025/03/14 (五) 19:01:06】\n目前播放時間為【1:23:45】\n則輸出的文字為【2025/03/14 (五) 20:24:51】',
         },
     }
 }[navigator.language];
@@ -294,6 +299,9 @@ let text_info_value = {}; Object.keys(default_values.text_info_sample).forEach((
 
                     td = $element(tr, 'td', null, 'live-clock-td');
                     const desc = $element(td, 'span', language.table_description[key], null);
+                    if (language.option_description[key]) {
+                        desc.title = language.option_description[key];
+                    }
 
                     td = $element(tr, 'td', null, 'live-clock-td');
                     const button = $element(td, 'span', `{${key}}`, 'live-clock-pattern-tag-button');
@@ -373,6 +381,10 @@ const css_video = `
     position: absolute !important;
     color: #FFFFFF !important;
     line-height: 1.3 !important;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    width: 100%;
 }
 
 `;
@@ -444,7 +456,7 @@ function update_tooltip_text() {
     }
 }
 
-function update_text_info() {
+function update_text_info_value() {
     const current_time = html5_main_video.currentTime;
     const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate;
 
@@ -455,24 +467,24 @@ function update_text_info() {
 
     const view_count = live_latency ? ytd_watch_info_text?.viewCountProps?.numberText : (Number(microformat.interactionCount) || '').toLocaleString();
 
-    text_info['time-current'] = Formatter.time(current_time);
-    text_info['time-separator'] = !live_latency ? '/' : '';
-    text_info['time-duration'] = !live_latency ? ytp_time_duration.textContent : '';
-    text_info['status-live-latency'] = live_latency || '';
-    text_info['status-buffer-health'] = buffer_health || '';
-    text_info['status-view-count'] = view_count || '';
-    text_info['time-date'] = live_latency ? Formatter.date(null, html5_video_player.getMediaReferenceTime()) : Formatter.date(start_date, current_time);
-    text_info['time-now'] = Date().toString().split(' ')[4]; // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
-    text_info['video-playbackrate'] = html5_main_video.playbackRate.toFixed(2);
-    text_info['video-volume'] = html5_video_player.getVolume();
-    text_info['video-quality'] = video_stats['optimal_format'];
-    text_info['codecs-video'] = `${codecs[0]} (${video_stats['fmt']})`;
-    text_info['codecs-audio'] = `${codecs[1]} (${video_stats['afmt']})`;
+    text_info_value['time-current'] = Formatter.time(current_time);
+    text_info_value['time-separator'] = !live_latency ? '/' : '';
+    text_info_value['time-duration'] = !live_latency ? ytp_time_duration.textContent : '';
+    text_info_value['status-live-latency'] = live_latency || '';
+    text_info_value['status-buffer-health'] = buffer_health || '';
+    text_info_value['status-view-count'] = view_count || '';
+    text_info_value['time-date'] = live_latency ? Formatter.date(null, html5_video_player.getMediaReferenceTime()) : Formatter.date(start_date, current_time);
+    text_info_value['time-now'] = Date().toString().split(' ')[4]; // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
+    text_info_value['video-playbackrate'] = html5_main_video.playbackRate.toFixed(2);
+    text_info_value['video-volume'] = html5_video_player.getVolume();
+    text_info_value['video-quality'] = video_stats['optimal_format'];
+    text_info_value['codecs-video'] = `${codecs[0]} (${video_stats['fmt']})`;
+    text_info_value['codecs-audio'] = `${codecs[1]} (${video_stats['afmt']})`;
 
-    Object.keys(text_info).forEach((key) => { text_info[key] = text_info[key] ? `${text_info_prefix[key]}${text_info[key]}${text_info_postfix[key]}` : ''; });
+    Object.keys(text_info_value).forEach((key) => { text_info_value[key] = text_info_value[key] ? `${text_info_prefix[key]}${text_info_value[key]}${text_info_postfix[key]}` : ''; });
 
-    if (element_time_on_controller) element_time_on_controller.textContent = text_pattern_on_controller.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info[name]);
-    if (element_time_on_video) element_time_on_video.textContent = text_pattern_on_video.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info[name]);
+    if (element_time_on_controller) element_time_on_controller.textContent = text_pattern_on_controller.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info_value[name]);
+    if (element_time_on_video) element_time_on_video.textContent = text_pattern_on_video.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info_value[name]);
 }
 
 
@@ -619,8 +631,8 @@ async function main() {
             new MutationObserver(() => { element_title_on_video.textContent = ytd_watch_metadata_title.textContent }).observe(ytd_watch_metadata_title, { attributes: true, childList: true, subtree: true });
         }
 
-        console.log('[Live Clock] addEventListener html5_main_video with update_text_info at "timeupdate"');
-        html5_main_video.addEventListener('timeupdate', update_text_info);
+        console.log('[Live Clock] addEventListener html5_main_video with update_text_info_value at "timeupdate"');
+        html5_main_video.addEventListener('timeupdate', update_text_info_value);
 
         console.log('[Live Clock] addEventListener html5_main_video with update_tooltip_text "volumechange"');
         html5_main_video.addEventListener('volumechange', update_tooltip_text);
