@@ -476,7 +476,7 @@ function update_text_info_value() {
     text_info_value['time-date'] = live_latency ? Formatter.date(null, html5_video_player.getMediaReferenceTime()) : Formatter.date(start_date, current_time);
     text_info_value['time-now'] = Date().toString().split(' ')[4]; // ['Fri', 'Jun', '21', '2024', '21:49:06', 'GMT+0800', '(台北標準時間)']
     text_info_value['video-playbackrate'] = html5_main_video.playbackRate.toFixed(2);
-    text_info_value['video-volume'] = html5_video_player.getVolume();
+    text_info_value['video-volume'] = `${html5_video_player.getVolume()}`;
     text_info_value['video-quality'] = video_stats['optimal_format'];
     text_info_value['codecs-video'] = `${codecs[0]} (${video_stats['fmt']})`;
     text_info_value['codecs-audio'] = `${codecs[1]} (${video_stats['afmt']})`;
