@@ -8,7 +8,7 @@
 // @grant       GM_registerMenuCommand
 // @grant       GM_setValue
 // @grant       GM_getValue
-// @version     1.0.3
+// @version     1.0.4
 // @author      Nekone
 // @description 2024/6/3 下午3:47:05
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
@@ -429,25 +429,19 @@ function create_span(selector, text) {
     return element;
 }
 
-function convert_rewind_time(rewind_time) {
-    const [s, m, h] = rewind_time.split(':').reverse().map((e) => Math.abs(Number(e)));
-    const total_seconds = s + (m || 0) * 60 + (h || 0) * 3600;
-    return rewind_time[0] == '-' ? -total_seconds : total_seconds;
-}
-
 function update_tooltip_text() {
     const ytp_tooltip_text = document.querySelector('.ytp-tooltip-text-wrapper .ytp-tooltip-text');
     if (ytp_tooltip_text) {
         const textContent = ytp_tooltip_text.textContent;
         if (textContent.includes(':') && !['(', ')'].some(e => textContent.includes(e))) {
-            const rewind_time = convert_rewind_time(textContent);
+            const rewind_time = Formatter.time_to_seconds(textContent);
             const start_date = microformat?.publication?.[0]?.startDate || microformat.uploadDate;
             if (rewind_time > 0) {
                 ytp_tooltip_text.textContent = `${textContent} / ${ytp_time_duration.textContent}\n` + Formatter.date(start_date, rewind_time);
             }
             else {
                 const secondsFromStart = Math.round((Date.now() - Date.parse(start_date)) / 1000) + rewind_time;
-                ytp_tooltip_text.textContent = `${Formatter.time(secondsFromStart)} / ${textContent}\n` + Formatter.date(start_date, secondsFromStart);
+                ytp_tooltip_text.textContent = `${Formatter.time_from_seconds(secondsFromStart)} / ${textContent}\n` + Formatter.date(start_date, secondsFromStart);
             }
         }
         else if (['音量', '%'].some(e => textContent.includes(e))) {
@@ -467,7 +461,7 @@ function update_text_info_value() {
 
     const view_count = live_latency ? ytd_watch_info_text?.viewCountProps?.numberText : (Number(microformat.interactionCount) || '').toLocaleString();
 
-    text_info_value['time-current'] = Formatter.time(current_time);
+    text_info_value['time-current'] = Formatter.time_from_seconds(current_time);
     text_info_value['time-separator'] = !live_latency ? '/' : '';
     text_info_value['time-duration'] = !live_latency ? ytp_time_duration.textContent : '';
     text_info_value['status-live-latency'] = live_latency || '';
@@ -658,7 +652,7 @@ class Formatter {
     static two_digits(number) {
         return number.toString().padStart(2, '0');
     }
-    static time(seconds) {
+    static time_from_seconds(seconds) {
         const [s, m, h] = [seconds % 60, (seconds / 60) % 60, seconds / 3600].map((e) => Math.floor(e));
         return h > 0 ? `${h}:${this.two_digits(m)}:${this.two_digits(s)}` : `${m}:${this.two_digits(s)}`;
     }
@@ -666,6 +660,11 @@ class Formatter {
         const present_time = new Date((start_date ? Date.parse(start_date) : 0) + Math.floor(seconds * 1000));
         const [week, month, day, year, time] = present_time.toString().split(' ');
         return `${year}/${this.abbr.month[month]}/${day} (${this.abbr.week[week]}) ${time}`;
+    }
+    static time_to_seconds(time) {
+        const [s, m, h] = time.split(':').reverse().map((e) => Math.abs(Number(e)));
+        const seconds = s + (m || 0) * 60 + (h || 0) * 3600;
+        return time[0] == '-' ? -seconds : seconds;
     }
 }
 
