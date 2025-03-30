@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.1
+// @version     1.0.2
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -19,7 +19,7 @@ class Formatter {
     static two_digits(number) {
         return number.toString().padStart(2, '0');
     }
-    static time(seconds) {
+    static time_from_seconds(seconds) {
         const [s, m, h] = [seconds % 60, (seconds / 60) % 60, seconds / 3600].map((e) => Math.floor(e));
         return h > 0 ? `${h}:${this.two_digits(m)}:${this.two_digits(s)}` : `${m}:${this.two_digits(s)}`;
     }
@@ -27,6 +27,11 @@ class Formatter {
         const present_time = new Date((start_date ? Date.parse(start_date) : 0) + Math.floor(seconds * 1000));
         const [week, month, day, year, time] = present_time.toString().split(' ');
         return `${year}/${this.abbr.month[month]}/${day} (${this.abbr.week[week]}) ${time}`;
+    }
+    static time_to_seconds(time) {
+        const [s, m, h] = time.split(':').reverse().map((e) => Math.abs(Number(e)));
+        const seconds = s + (m || 0) * 60 + (h || 0) * 3600;
+        return time[0] == '-' ? -seconds : seconds;
     }
 }
 
@@ -43,11 +48,12 @@ function wait_element_head(selector) {
     });
 }
 
-function wait_element_body(selector) {
+function wait_element_body(selector, style) {
     return new Promise((resolve) => {
         const observer = new MutationObserver(() => {
             const e = document.querySelector(selector);
             if (e) {
+                if (style) e.style = style;
                 observer.disconnect();
                 resolve(e);
             }
@@ -56,51 +62,87 @@ function wait_element_body(selector) {
     });
 }
 
+function create_span(selector, text, style) {
+    let element = document.querySelector(`.${selector}`);
+    if (!element) {
+        element = document.createElement('span');
+        element.setAttribute('class', selector);
+        element.textContent = text || '';
+        element.style = style || '';
+    }
+    return element;
+}
+
+function get_video_buffer(video) {
+    let seconds = null;
+    try { seconds = (video.buffered.end(video.buffered.length - 1) - video.currentTime); }
+    catch (e) { seconds = 0.00; }
+    finally { return seconds; }
+}
+
+async function get_microformat() {
+    let microformat = null;
+    if (location.href.includes('/videos/')) {
+        microformat = {
+            '@type': 'VideoObject',
+            'description': '',
+            'embedUrl': '',
+            'name': '',
+            'thumbnailUrl': [],
+            'uploadDate': '',
+            'publication': {
+                '@type': 'BroadcastEvent',
+                'endDate': '',
+                'startDate': '',
+                'isLiveBroadcast': false,
+            },
+        };
+        microformat.publication.startDate = (await wait_element_head('meta[property="og:video:release_date"]')).content;
+    }
+    else {
+        microformat = JSON.parse((await wait_element_head('script[type="application/ld+json"]')).textContent)['@graph'][0];
+    }
+    return microformat;
+}
+
+const text_info_value = {};
+function update_text_info_value(microformat, video, span, current_time, duration, viewer_count, volume) {
+    text_info_value['time-current'] = current_time.textContent;
+    text_info_value['time-separator'] = duration ? '/' : '';
+    text_info_value['time-duration'] = duration?.textContent || '';
+    text_info_value['status-buffer-health'] = `(B/${get_video_buffer(video).toFixed(2)})`;
+    text_info_value['status-view-count'] = viewer_count ? `(V/${viewer_count.textContent})` : '';
+    text_info_value['time-date'] = duration ? `(${Formatter.date(microformat.publication.startDate, Formatter.time_to_seconds(current_time.textContent))})` : '';
+    text_info_value['time-now'] = `[${Date().toString().split(' ')[4]}]`;
+    text_info_value['video-playbackrate/volume'] = `(${video.playbackRate.toFixed(2)}x/${volume.ariaValueText})`;
+
+    span.textContent = Object.values(text_info_value).join(' ');
+}
+
 (async function main() {
     try {
         if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
+            const microformat = await get_microformat();
             const video = await wait_element_body('video[webkit-playsinline]');
-            const span = document.createElement('span');
-            span.setAttribute('id', 'live-time-on-video');
-            span.style = `z-index: 1; pointer-events: none; position: absolute; bottom: 0px; left: 4px; text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; font-family: system-ui; font-size: medium;`;
+
+            const span = create_span('live-time-on-video', '( ^)o(^ )', `z-index: 1; pointer-events: none; position: absolute; bottom: 0px; left: 4px; text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; font-family: system-ui; font-size: medium;`);
             video.before(span);
+
+            let current_time = null;
+            let duration = null;
+            let viewer_count = null;
             const volume = await wait_element_body('input[id*="player-volume-slider"]');
             if (location.href.includes('/videos/')) {
-                const current_time = await wait_element_body('p[data-a-target="player-seekbar-current-time"]');
-                current_time.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`;
-                const duration = await wait_element_body('p[data-a-target="player-seekbar-duration"]');
-                duration.style = `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`;
-                const release_date = await wait_element_head('meta[property="og:video:release_date"]');
-                [[current_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
-                    new MutationObserver(() => {
-                        span.textContent = [
-                            current_time.textContent,
-                            '/',
-                            duration.textContent,
-                            `(B: ${(video.buffered.end(video.buffered.length - 1) - video.currentTime).toFixed(2)})`,
-                            `(${Formatter.date(release_date.content, video.currentTime)})`,
-                            `[${Date().toString().split(' ')[4]}]`,
-                            `(${video.playbackRate.toFixed(2)}x/${volume.ariaValueText})`,
-                        ].join(' ');
-                    }).observe(...e);
-                });
+                current_time = await wait_element_body('p[data-a-target="player-seekbar-current-time"]', `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`);
+                duration = await wait_element_body('p[data-a-target="player-seekbar-duration"]', `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`);
             }
             else {
-                const live_time = await wait_element_body('span.live-time > span');
-                const viewer_count = await wait_element_body('p[data-a-target="animated-channel-viewers-count"]');
-                // const script_json = await wait_element_head('script[type="application/ld+json"]');
-                // const parse_json = JSON.parse(script_json.textContent)['@graph'][0];
-                [[live_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
-                    new MutationObserver(() => {
-                            span.textContent = [
-                                live_time.textContent,
-                                `(B: ${(video.buffered.end(0) - video.currentTime).toFixed(2)})`,
-                                `[${Date().toString().split(' ')[4]}]`,
-                                `(${viewer_count.textContent}/${volume.ariaValueText})`,
-                            ].join(' ');
-                    }).observe(...e);
-                });
+                current_time = await wait_element_body('span.live-time > span');
+                viewer_count = await wait_element_body('p[data-a-target="animated-channel-viewers-count"]');
             }
+            [[current_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
+                new MutationObserver(() => { update_text_info_value(microformat, video, span, current_time, duration, viewer_count, volume) }).observe(...e);
+            });
 
             // const video_container = await wait_element_body('[data-test-selector="video-player__video-container"]')
             // video_container.addEventListener('wheel', (event) => { change_volume_on_wheel(event, video_container, volume) }, { passive: true })
