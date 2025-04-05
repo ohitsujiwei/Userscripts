@@ -3,13 +3,18 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.2
+// @version     1.0.3
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
 // ==/UserScript==
 
 'use strict'
+
+let global_span = null;
+function print(string) {
+    global_span ? global_span.textContent = '( ^)o(^ ) -> ' + string : console.log(string);
+}
 
 class Formatter {
     static abbr = {
@@ -36,6 +41,7 @@ class Formatter {
 }
 
 function wait_element_head(selector) {
+    print(`await wait_element_head('${selector}');`);
     return new Promise((resolve) => {
         const observer = new MutationObserver(() => {
             const e = document.querySelector(selector);
@@ -49,6 +55,7 @@ function wait_element_head(selector) {
 }
 
 function wait_element_body(selector, style) {
+    print(`await wait_element_body('${selector}');`);
     return new Promise((resolve) => {
         const observer = new MutationObserver(() => {
             const e = document.querySelector(selector);
@@ -81,26 +88,26 @@ function get_video_buffer(video) {
 }
 
 async function get_microformat() {
-    let microformat = null;
+    let microformat = {
+        '@type': 'VideoObject',
+        'description': '',
+        'embedUrl': '',
+        'name': '',
+        'thumbnailUrl': [],
+        'uploadDate': '',
+        'publication': {
+            '@type': 'BroadcastEvent',
+            'endDate': '',
+            'startDate': '',
+            'isLiveBroadcast': false,
+        },
+    };
     if (location.href.includes('/videos/')) {
-        microformat = {
-            '@type': 'VideoObject',
-            'description': '',
-            'embedUrl': '',
-            'name': '',
-            'thumbnailUrl': [],
-            'uploadDate': '',
-            'publication': {
-                '@type': 'BroadcastEvent',
-                'endDate': '',
-                'startDate': '',
-                'isLiveBroadcast': false,
-            },
-        };
-        microformat.publication.startDate = (await wait_element_head('meta[property="og:video:release_date"]')).content;
+        microformat.publication.startDate = document.querySelector('meta[property="og:video:release_date"]').content;
     }
     else {
-        microformat = JSON.parse((await wait_element_head('script[type="application/ld+json"]')).textContent)['@graph'][0];
+        const json = document.querySelector('script[type="application/ld+json"]');
+        if (json) microformat = JSON.parse(json.textContent)['@graph'][0];
     }
     return microformat;
 }
@@ -122,11 +129,10 @@ function update_text_info_value(microformat, video, span, current_time, duration
 (async function main() {
     try {
         if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
-            const microformat = await get_microformat();
             const video = await wait_element_body('video[webkit-playsinline]');
-
             const span = create_span('live-time-on-video', '( ^)o(^ )', `z-index: 1; pointer-events: none; position: absolute; bottom: 0px; left: 4px; text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; font-family: system-ui; font-size: medium;`);
             video.before(span);
+            global_span = span;
 
             let current_time = null;
             let duration = null;
@@ -140,6 +146,9 @@ function update_text_info_value(microformat, video, span, current_time, duration
                 current_time = await wait_element_body('span.live-time > span');
                 viewer_count = await wait_element_body('p[data-a-target="animated-channel-viewers-count"]');
             }
+
+            const microformat = await get_microformat();
+
             [[current_time, { subtree:true, characterData:true }], [volume, { attributes:true }]].forEach((e) => {
                 new MutationObserver(() => { update_text_info_value(microformat, video, span, current_time, duration, viewer_count, volume) }).observe(...e);
             });
