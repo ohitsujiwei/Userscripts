@@ -8,7 +8,7 @@
 // @grant       GM_registerMenuCommand
 // @grant       GM_setValue
 // @grant       GM_getValue
-// @version     1.0.4
+// @version     1.0.5
 // @author      Nekone
 // @description 2024/6/3 下午3:47:05
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
@@ -240,7 +240,9 @@ let text_pattern_on_video = GM_getValue(GM_keys.pattern_on_video, default_values
 let text_pattern_on_controller = GM_getValue(GM_keys.pattern_on_controller, default_values.pattern_on_controller);
 let text_info_prefix = GM_getValue(GM_keys.text_info_prefix, default_values.text_info_prefix);
 let text_info_postfix = GM_getValue(GM_keys.text_info_postfix, default_values.text_info_postfix);
-let text_info_value = {}; Object.keys(default_values.text_info_sample).forEach((e) => { text_info_value[e] = ''; });
+
+let text_info_value = {};
+Object.keys(default_values.text_info_sample).forEach((e) => { text_info_value[e] = ''; });
 
 (async function register_menu() {
     try {
@@ -389,6 +391,11 @@ const css_video = `
 
 `;
 
+let global_span = null;
+function print(string) {
+    global_span ? global_span.textContent = '( ^)o(^ ) -> ' + string : console.log(string);
+}
+
 function add_style(css, id) {
     const style = document.createElement('style');
     style.setAttribute('id', id);
@@ -407,6 +414,7 @@ let ytd_watch_info_text = null;
 let ytp_time_duration = null;
 
 function wait_element(selector) {
+    print(`await wait_element('${selector}');`);
     return new Promise((resolve) => {
         const observer = new MutationObserver(() => {
             const e = document.querySelector(selector);
@@ -483,6 +491,7 @@ function update_text_info_value() {
 
 
 async function get_video_microformat() {
+    print(`get_video_microformat();`)
     try {
         if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
             const microformat_script = await wait_element('#microformat script');
@@ -576,67 +585,41 @@ function change_clock_on_video_bottom() {
 
 async function main() {
     try {
-        console.log('[Live Clock] add css');
         add_style(css_video, 'live-clock');
 
-        console.log('[Live Clock] get microformat');
+        html5_main_video = await wait_element('.html5-main-video');
+        element_time_on_video = create_span('ytp-time-on-video', '( ^)o(^ )');
+        html5_main_video.after(element_time_on_video);
+        new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true });
+        global_span = element_time_on_video;
+
+        html5_video_player = await wait_element('.html5-video-player');
         microformat = await get_video_microformat();
 
-        console.log('[Live Clock] add element_time_on_controller');
         element_time_on_controller = create_span('ytp-time-on-control');
-        console.log('[Live Clock] get ytp_time_wrapper');
         const ytp_time_wrapper = await wait_element('.ytp-time-wrapper');
-        console.log('[Live Clock] append element_time_on_controller');
         ytp_time_wrapper.appendChild(element_time_on_controller);
 
-        console.log('[Live Clock] get ytp_time_current');
         const ytp_time_current = await wait_element('.ytp-time-current');
-        console.log('[Live Clock] get ytp_time_separator');
         const ytp_time_separator = await wait_element('.ytp-time-separator');
-        console.log('[Live Clock] get ytp_time_duration');
         ytp_time_duration = await wait_element('.ytp-time-duration');
-        console.log('[Live Clock] hide ytp_time_current/separator/duration');
         [ytp_time_current, ytp_time_separator, ytp_time_duration].forEach((e) => { e.style.display = 'none' });
 
-        console.log('[Live Clock] get html5_video_player');
-        html5_video_player = await wait_element('.html5-video-player');
-
-        console.log('[Live Clock] get html5_main_video');
-        html5_main_video = await wait_element('.html5-main-video');
-
-        console.log('[Live Clock] add element_time_on_video');
-        element_time_on_video = create_span('ytp-time-on-video', '( ^)o(^ )');
-        console.log('[Live Clock] append element_time_on_video');
-        html5_main_video.after(element_time_on_video);
-        console.log('[Live Clock] obseve html5_main_video with change_clock_on_video_bottom');
-        new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true });
 
         if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
-            console.log('[Live Clock] get ytd_watch_info_text');
             ytd_watch_info_text = await wait_element('#ytd-watch-info-text');
 
-            console.log('[Live Clock] get ytd_watch_metadata_title');
             const ytd_watch_metadata_title = await wait_element('ytd-watch-metadata #title h1 yt-formatted-string');
-            console.log('[Live Clock] add element_title_on_video');
             element_title_on_video = create_span('ytp-title-on-video', ytd_watch_metadata_title.textContent);
-            console.log('[Live Clock] append element_title_on_video');
             html5_main_video.after(element_title_on_video);
-            console.log('[Live Clock] obseve ytd_watch_metadata_title with arrow function');
             new MutationObserver(() => { element_title_on_video.textContent = ytd_watch_metadata_title.textContent }).observe(ytd_watch_metadata_title, { attributes: true, childList: true, subtree: true });
         }
 
-        console.log('[Live Clock] addEventListener html5_main_video with update_text_info_value at "timeupdate"');
         html5_main_video.addEventListener('timeupdate', update_text_info_value);
-
-        console.log('[Live Clock] addEventListener html5_main_video with update_tooltip_text "volumechange"');
         html5_main_video.addEventListener('volumechange', update_tooltip_text);
-
-        console.log('[Live Clock] addEventListener html5_main_video with change_volume_on_wheel "wheel"');
         html5_main_video.addEventListener('wheel', change_volume_on_wheel);
 
-        console.log('[Live Clock] get ytp_tooltip_text_wrapper');
         const ytp_tooltip_text_wrapper = await wait_element('.ytp-tooltip-text-wrapper');
-        console.log('[Live Clock] obseve ytp_tooltip_text_wrapper with update_tooltip_text');
         new MutationObserver(update_tooltip_text).observe(ytp_tooltip_text_wrapper, { attributes: true, subtree: true });
     }
     catch (e) {
