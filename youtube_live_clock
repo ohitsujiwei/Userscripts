@@ -8,7 +8,7 @@
 // @grant       GM_registerMenuCommand
 // @grant       GM_setValue
 // @grant       GM_getValue
-// @version     1.0.5
+// @version     1.0.7
 // @author      Nekone
 // @description 2024/6/3 下午3:47:05
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
@@ -27,7 +27,7 @@ const language = {
             'time-current': '目前時間',
             'time-separator': '分隔符號 (Live 不適用)',
             'time-duration': '影片時長 (Live 不適用)',
-            'status-live-latency': '實況延遲(太久會變0.00s)ℹ️',
+            'status-live-latency': '實況延遲ℹ️',
             'status-buffer-health': '緩衝大小',
             'status-view-count': '觀看數 / 觀眾數ℹ️',
             'time-date': '實況開始時間+目前時間ℹ️',
@@ -55,7 +55,7 @@ const GM_keys = {
 
 const default_values = {
     pattern_on_video: `{time-current} {time-separator} {time-duration} {status-live-latency} {status-buffer-health} {status-view-count} {time-date} {time-now} ({video-playbackrate}/{video-volume}/{video-quality})`,
-    pattern_on_controller: `{time-current} {time-separator} {time-duration} {time-date} [{codecs-video} / {codecs-audio}]`,
+    pattern_on_controller: `{time-current} {time-separator} {time-duration} {time-date} / {codecs-video} / {codecs-audio}`,
     text_info_prefix: {
         'time-current': '',
         'time-separator': '',
@@ -256,10 +256,10 @@ Object.keys(default_values.text_info_sample).forEach((e) => { text_info_value[e]
                 return element;
             };
 
-            text_pattern_on_video = await GM_getValue(GM_keys.pattern_on_video, default_values.pattern_on_video);
-            text_pattern_on_controller = await GM_getValue(GM_keys.pattern_on_controller, default_values.pattern_on_controller);
-            text_info_prefix = await GM_getValue(GM_keys.text_info_prefix, default_values.text_info_prefix);
-            text_info_postfix = await GM_getValue(GM_keys.text_info_postfix, default_values.text_info_postfix);
+            text_pattern_on_video = GM_getValue(GM_keys.pattern_on_video, default_values.pattern_on_video);
+            text_pattern_on_controller = GM_getValue(GM_keys.pattern_on_controller, default_values.pattern_on_controller);
+            text_info_prefix = GM_getValue(GM_keys.text_info_prefix, default_values.text_info_prefix);
+            text_info_postfix = GM_getValue(GM_keys.text_info_postfix, default_values.text_info_postfix);
 
             const menu_wapper = $element(document.body, 'div', null, 'live-clock-wrapper');
             let menu_wapper_close = null;
@@ -340,10 +340,10 @@ Object.keys(default_values.text_info_sample).forEach((e) => { text_info_value[e]
             const btn_save = $element(span_title, 'button', language.save, 'live-clock-menu-save');
             btn_save.onclick = async () => {
                 text_pattern_on_video = textarea_pattern_on_video.value
-                await GM_setValue(GM_keys.pattern_on_video, text_pattern_on_video);
-                await GM_setValue(GM_keys.pattern_on_controller, text_pattern_on_controller);
-                await GM_setValue(GM_keys.text_info_prefix, text_info_prefix);
-                await GM_setValue(GM_keys.text_info_postfix, text_info_postfix);
+                GM_setValue(GM_keys.pattern_on_video, text_pattern_on_video);
+                GM_setValue(GM_keys.pattern_on_controller, text_pattern_on_controller);
+                GM_setValue(GM_keys.text_info_prefix, text_info_prefix);
+                GM_setValue(GM_keys.text_info_postfix, text_info_postfix);
                 menu_wapper.remove();
             };
         }
@@ -413,20 +413,6 @@ let html5_main_video = null;
 let ytd_watch_info_text = null;
 let ytp_time_duration = null;
 
-function wait_element(selector) {
-    print(`await wait_element('${selector}');`);
-    return new Promise((resolve) => {
-        const observer = new MutationObserver(() => {
-            const e = document.querySelector(selector);
-            if (e) {
-                observer.disconnect();
-                resolve(e);
-            }
-        });
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
-    });
-}
-
 function create_span(selector, text) {
     let element = document.querySelector(`.${selector}`);
     if (!element) {
@@ -473,6 +459,7 @@ function update_text_info_value() {
     text_info_value['time-separator'] = !live_latency ? '/' : '';
     text_info_value['time-duration'] = !live_latency ? ytp_time_duration.textContent : '';
     text_info_value['status-live-latency'] = live_latency || '';
+    // text_info_value['status-live-latency'] = live_latency ? (live_latency == '0.00s' ? `${((Date.now() - html5_video_player.getMediaReferenceTime() * 1000) / 1000).toFixed(2)}s` : live_latency) : '';
     text_info_value['status-buffer-health'] = buffer_health || '';
     text_info_value['status-view-count'] = view_count || '';
     text_info_value['time-date'] = live_latency ? Formatter.date(null, html5_video_player.getMediaReferenceTime()) : Formatter.date(start_date, current_time);
@@ -489,31 +476,23 @@ function update_text_info_value() {
     if (element_time_on_video) element_time_on_video.textContent = text_pattern_on_video.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => text_info_value[name]);
 }
 
-
 async function get_video_microformat() {
-    print(`get_video_microformat();`)
-    try {
-        if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
-            const microformat_script = await wait_element('#microformat script');
-            const json = JSON.parse(microformat_script.textContent);
-            return json;
-        }
-        else if (location.href.includes('https://www.youtube.com/embed/')) {
-            // For test
-            // const player_microformat_renderer = {"thumbnail":{"thumbnails":[{"url":"https://i.ytimg.com/vi/uR_MfCykUqk/maxresdefault.jpg","width":1280,"height":720}]},"embed":{"iframeUrl":"https://www.youtube.com/embed/uR_MfCykUqk","width":1280,"height":720},"title":{"simpleText":"【Girls' Frontline 2: Exilium】"},"description":{"simpleText":"#GirlsFrontline2Exilium #GFL2EXILIUM"},"lengthSeconds":"261","ownerProfileUrl":"http://www.youtube.com/@Nekone0405","externalChannelId":"UCSjn4tVXo_tuGHRsrH2RGMQ","isFamilySafe":true,"availableCountries":["AD","AE","AF","AG","AI","AL","AM","AO","AQ","AR","AS","AT","AU","AW","AX","AZ","BA","BB","BD","BE","BF","BG","BH","BI","BJ","BL","BM","BN","BO","BQ","BR","BS","BT","BV","BW","BY","BZ","CA","CC","CD","CF","CG","CH","CI","CK","CL","CM","CN","CO","CR","CU","CV","CW","CX","CY","CZ","DE","DJ","DK","DM","DO","DZ","EC","EE","EG","EH","ER","ES","ET","FI","FJ","FK","FM","FO","FR","GA","GB","GD","GE","GF","GG","GH","GI","GL","GM","GN","GP","GQ","GR","GS","GT","GU","GW","GY","HK","HM","HN","HR","HT","HU","ID","IE","IL","IM","IN","IO","IQ","IR","IS","IT","JE","JM","JO","JP","KE","KG","KH","KI","KM","KN","KP","KR","KW","KY","KZ","LA","LB","LC","LI","LK","LR","LS","LT","LU","LV","LY","MA","MC","MD","ME","MF","MG","MH","MK","ML","MM","MN","MO","MP","MQ","MR","MS","MT","MU","MV","MW","MX","MY","MZ","NA","NC","NE","NF","NG","NI","NL","NO","NP","NR","NU","NZ","OM","PA","PE","PF","PG","PH","PK","PL","PM","PN","PR","PS","PT","PW","PY","QA","RE","RO","RS","RU","RW","SA","SB","SC","SD","SE","SG","SH","SI","SJ","SK","SL","SM","SN","SO","SR","SS","ST","SV","SX","SY","SZ","TC","TD","TF","TG","TH","TJ","TK","TL","TM","TN","TO","TR","TT","TV","TW","TZ","UA","UG","UM","US","UY","UZ","VA","VC","VE","VG","VI","VN","VU","WF","WS","YE","YT","ZA","ZM","ZW"],"isUnlisted":true,"hasYpcMetadata":false,"viewCount":"8","category":"Gaming","publishDate":"2025-01-25T22:03:29-08:00","ownerChannelName":"Wei","uploadDate":"2025-01-25T22:03:29-08:00","isShortsEligible":false};
-
-            const ytp_title_link = await wait_element('.ytp-title-link');
-            const video_id = ytp_title_link.href.split('/watch?v=').pop();
-            const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20240821.01.00' } }, video_id: video_id }),
-            });
-            if (!response.ok) {
-                throw new Error(`[fetch] response.status = ${response.status}`);
-            }
-            const player_microformat_renderer = (await response.json()).microformat.playerMicroformatRenderer;
-
+    print(`get_video_microformat();`);
+    if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
+        return JSON.parse((await Waitting.body('#microformat script')).textContent);
+    }
+    else if (location.href.includes('https://www.youtube.com/embed/')) {
+        const video_id = (await Waitting.body('.ytp-title-link')).href.split('/watch?v=').pop();
+        return fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20240821.01.00' } }, video_id: video_id }),
+        })
+        .then((response) => {
+            return response.json();
+        })
+        .then((data) => {
+            const player_microformat_renderer = data.microformat.playerMicroformatRenderer;
             return {
                 "interactionCount": player_microformat_renderer.viewCount,
                 "name": player_microformat_renderer.title.simpleText,
@@ -526,16 +505,16 @@ async function get_video_microformat() {
                     }
                 ]
             };
-        }
-    }
-    catch (e) {
-        console.log(e);
+        })
+        .catch((error) => {
+            console.log(error);
+        });
     }
 }
 
 let timeoutid = null
 function change_volume_on_wheel(e) {
-    const onYTLSTM = document.querySelector('body[data-ytlstm-theater-mode]')
+    const onYTLSTM = document.querySelector('body[data-ytlstm-theater-mode]');
     if (onYTLSTM || location.href.includes('https://www.youtube.com/embed/')) {
         const volume = html5_video_player.getVolume() + (10 - 5 * e.shiftKey) * (e.deltaY < 0 ? 1 : -1);
         if (volume <= 0) {
@@ -575,7 +554,7 @@ function change_clock_on_video_bottom() {
     if (onYTLSTM) {
         const text_height_title = element_title_on_video.getBoundingClientRect().height;
         element_title_on_video.style.left = `${video_left + 2}px`;
-        element_title_on_video.style.top = `${video_top < text_height_time ? 0 : video_top - text_height_time - 2}px`;
+        element_title_on_video.style.top = `${video_top < text_height_title ? 0 : video_top - text_height_title - 2}px`;
         element_title_on_video.style.display = '';
     }
     else {
@@ -587,40 +566,42 @@ async function main() {
     try {
         add_style(css_video, 'live-clock');
 
-        html5_main_video = await wait_element('.html5-main-video');
-        element_time_on_video = create_span('ytp-time-on-video', '( ^)o(^ )');
-        html5_main_video.after(element_time_on_video);
-        new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true });
-        global_span = element_time_on_video;
+        Waitting.body('.html5-main-video').then((e) => {
+            element_time_on_video = create_span('ytp-time-on-video', '( ^)o(^ )');
+            global_span = element_time_on_video;
+            html5_main_video = e;
+            html5_main_video.after(element_time_on_video);
+            new MutationObserver(change_clock_on_video_bottom).observe(html5_main_video, { attributes: true });
+        });
 
-        html5_video_player = await wait_element('.html5-video-player');
-        microformat = await get_video_microformat();
+        Waitting.body('.html5-video-player').then((e) => { html5_video_player = e; });
+        Waitting.body('.ytp-time-wrapper').then((e) => {
+            element_time_on_controller = create_span('ytp-time-on-control');
+            e.appendChild(element_time_on_controller);
+        });
 
-        element_time_on_controller = create_span('ytp-time-on-control');
-        const ytp_time_wrapper = await wait_element('.ytp-time-wrapper');
-        ytp_time_wrapper.appendChild(element_time_on_controller);
-
-        const ytp_time_current = await wait_element('.ytp-time-current');
-        const ytp_time_separator = await wait_element('.ytp-time-separator');
-        ytp_time_duration = await wait_element('.ytp-time-duration');
+        const ytp_time_current = await Waitting.body('.ytp-time-current');
+        const ytp_time_separator = await Waitting.body('.ytp-time-separator');
+        ytp_time_duration = await Waitting.body('.ytp-time-duration');
         [ytp_time_current, ytp_time_separator, ytp_time_duration].forEach((e) => { e.style.display = 'none' });
 
-
         if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
-            ytd_watch_info_text = await wait_element('#ytd-watch-info-text');
-
-            const ytd_watch_metadata_title = await wait_element('ytd-watch-metadata #title h1 yt-formatted-string');
-            element_title_on_video = create_span('ytp-title-on-video', ytd_watch_metadata_title.textContent);
-            html5_main_video.after(element_title_on_video);
-            new MutationObserver(() => { element_title_on_video.textContent = ytd_watch_metadata_title.textContent }).observe(ytd_watch_metadata_title, { attributes: true, childList: true, subtree: true });
+            Waitting.body('#ytd-watch-info-text').then((e) => { ytd_watch_info_text = e; });
+            Waitting.body('ytd-watch-metadata #title h1 yt-formatted-string').then((title) => {
+                element_title_on_video = create_span('ytp-title-on-video', title.textContent);
+                html5_main_video.after(element_title_on_video);
+                new MutationObserver(() => { element_title_on_video.textContent = title.textContent }).observe(title, { attributes: true, childList: true, subtree: true });
+            });
         }
+
+        microformat = await get_video_microformat();
 
         html5_main_video.addEventListener('timeupdate', update_text_info_value);
         html5_main_video.addEventListener('volumechange', update_tooltip_text);
         html5_main_video.addEventListener('wheel', change_volume_on_wheel);
 
-        const ytp_tooltip_text_wrapper = await wait_element('.ytp-tooltip-text-wrapper');
-        new MutationObserver(update_tooltip_text).observe(ytp_tooltip_text_wrapper, { attributes: true, subtree: true });
+        Waitting.body('.ytp-tooltip-text-wrapper').then((e) => {new MutationObserver(update_tooltip_text).observe(e, { attributes: true, subtree: true });});
+
     }
     catch (e) {
         console.log(e);
@@ -651,10 +632,36 @@ class Formatter {
     }
 }
 
+class Waitting {
+    static head(selector) {
+        print(`Watting.head('${selector}');`);
+        return this.promise(selector, document.head);
+    }
+    static body(selector) {
+        print(`Watting.body('${selector}');`);
+        return this.promise(selector, document.body);
+    }
+    static promise(selector, observe) {
+        return new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const e = document.querySelector(selector);
+                if (e) {
+                    observer.disconnect();
+                    resolve(e);
+                }
+            });
+            observer.observe(observe, { attributes: false, childList: true, subtree: true });
+        });
+    }
+}
+
 if (['/watch?v=', '/live/'].some(e => location.href.includes(e))) {
     document.addEventListener('yt-navigate-finish', main);
 }
-else if (location.href.includes('https://www.youtube.com/embed/')) {
+else if (location.href.includes('https://www.youtube.com/embed/') && location.href.includes('holodex.net')) {
+    main();
+}
+else if (location.href.split('/').length == 5 && !location.href.includes('?')) {
     main();
 }
 else {
