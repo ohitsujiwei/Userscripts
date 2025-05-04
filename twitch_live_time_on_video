@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.7
+// @version     1.0.8
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -29,15 +29,15 @@ const css_video = `
     font-size: medium;
 }
 
-.quality-button-on-video[checked] {
+
+.button-on-video[checked] {
     border-color: #88D2FF !important;
     background: #FFA6EA !important;
     color: #000000 !important;
     font-weight: bold !important;
 }
 
-.latency-mode-toggle-on-video,
-.quality-button-on-video {
+.button-on-video {
     padding: 2px;
     margin: 0px 2px;
     border-radius: 4px;
@@ -96,6 +96,8 @@ class Waitting {
         return this.promise(selector, document.body);
     }
     static promise(selector, observe) {
+        const e = document.querySelector(selector);
+        if (e) return new Promise((resolve) => { resolve(e); });
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
                 const e = document.querySelector(selector);
@@ -188,12 +190,16 @@ async function player_settings_process(objects) {
         const b = document.createElement('button');
         b.setAttribute('class', classname);
         b.textContent = textContent;
-        b.onclick = onclick;
+        b.onclick = () => {
+            parent.querySelectorAll('.button-on-video').forEach((e) => { b.disabled = true; e.style.cursor = 'no-drop'; });
+            onclick();
+            parent.querySelectorAll('.button-on-video').forEach((e) => { b.disabled = false; e.style.cursor = ''; });
+        };
         parent.insertBefore(b, parent.firstChild);
         return b;
     }
 
-    async function add_quality_on_control(control) {
+    async function add_quality_button_on_control(control) {
         await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
         await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
         await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
@@ -202,14 +208,14 @@ async function player_settings_process(objects) {
                 if (index == 0) return;
                 const input = submenu.querySelector('input');
                 const label = submenu.querySelector('label').textContent.split(' ')[0];
-                const button = add_button(control, 'quality-button-on-video', label, async () => {
+                const button = add_button(control, 'button-on-video', label, async () => {
                     await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
                     await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
                     await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
                     await Waitting.body(selector.player_settings_menu_quality_options).then((div) => { div.childNodes[index].click(); });
                     await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
                     objects.quality = label;
-                    control.querySelectorAll('.quality-button-on-video').forEach((b) => { b.removeAttribute('checked'); });
+                    control.querySelectorAll('.button-on-video').forEach((b) => { b.removeAttribute('checked'); });
                     button.setAttribute('checked', '');
                 });
                 if (input.checked) {
@@ -221,24 +227,50 @@ async function player_settings_process(objects) {
         await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
     }
 
-    async function open_video_status_panel() {
-        await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-        await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
-        await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
-        await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((input) => { input.click(); });
-        await Waitting.body(selector.player_overlay_video_stats).then(async (div) => {
-            div.style.display = 'none';
-            objects.buffer = await Waitting.body(selector.video_stats_buffer);
-            if (!location.href.includes('/videos/')) {
-                objects.latency = await Waitting.body(selector.video_stats_latency);
-                objects.latency_mode = await Waitting.body(selector.video_stats_latency_mode);
+    async function add_stats_button_on_control(control) {
+        const button = add_button(control, 'button-on-video', 'Stats/Disable', async () => {
+            switch (button.textContent) {
+                case 'Stats/Hide': {
+                    await Waitting.body(selector.player_overlay_video_stats).then((div) => { div.style.display = ''; });
+                    button.textContent = 'Stats/Enable';
+                    break;
+                }
+                case 'Stats/Enable': {
+                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
+                    await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((input) => { input.click(); });
+                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    objects.buffer = null;
+                    objects.latency = null;
+                    objects.latency_mode = null;
+                    button.textContent = 'Stats/Disable';
+                    break;
+                }
+                case 'Stats/Disable': {
+                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
+                    await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((input) => { input.click(); });
+                    await Waitting.body(selector.player_overlay_video_stats).then(async (div) => {
+                        div.style.display = 'none';
+                        objects.buffer = await Waitting.body(selector.video_stats_buffer);
+                        if (!location.href.includes('/videos/')) {
+                            objects.latency = await Waitting.body(selector.video_stats_latency);
+                            objects.latency_mode = await Waitting.body(selector.video_stats_latency_mode);
+                        }
+                    });
+                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    button.textContent = 'Stats/Hide';
+                    break;
+                }
             }
         });
-        await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+        button.click();
     }
 
-    async function add_latency_mode_toggle_on_control(control) {
-        const button = add_button(control, 'latency-mode-toggle-on-video', objects.latency_mode ? objects.latency_mode.textContent : 'Latency', async () => {
+    async function add_latency_mode_toggle_button_on_control(control) {
+        const button = add_button(control, 'button-on-video', objects.latency_mode ? objects.latency_mode.textContent : 'Latency', async () => {
             await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
             await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
             await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
@@ -249,9 +281,9 @@ async function player_settings_process(objects) {
     }
 
     Waitting.body(selector.player_control_right).then(async (control) => {
-        await add_quality_on_control(control);
-        await open_video_status_panel();
-        await add_latency_mode_toggle_on_control(control);
+        await add_quality_button_on_control(control);
+        await add_stats_button_on_control(control);
+        await add_latency_mode_toggle_button_on_control(control);
     });
 
 }
