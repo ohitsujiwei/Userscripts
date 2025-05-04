@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.6
+// @version     1.0.7
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -14,6 +14,51 @@
 let global_span = null;
 function print(string) {
     global_span ? global_span.textContent = '( ^)o(^ ) -> ' + string : console.log(string);
+}
+
+const css_video = `
+
+.live-time-on-video {
+    z-index: 1;
+    pointer-events: none;
+    position: absolute;
+    bottom: 0px;
+    left: 4px;
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
+    font-family: system-ui;
+    font-size: medium;
+}
+
+.quality-button-on-video[checked] {
+    border-color: #88D2FF !important;
+    background: #FFA6EA !important;
+    color: #000000 !important;
+    font-weight: bold !important;
+}
+
+.latency-mode-toggle-on-video,
+.quality-button-on-video {
+    padding: 2px;
+    margin: 0px 2px;
+    border-radius: 4px;
+    border-width: 2px;
+    border-style: solid;
+    border-color: #FFFFFF;
+    background: rgba(0, 0, 0, 0.5);
+    color: #FFFFFF;
+}
+
+p[data-a-target*="player-seekbar"] {
+    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
+}
+
+`;
+
+function add_style(css, id) {
+    const style = document.createElement('style');
+    style.setAttribute('id', id);
+    style.textContent = css;
+    document.head.appendChild(style);
 }
 
 class Formatter {
@@ -136,35 +181,41 @@ async function player_settings_process(objects) {
         video_stats_buffer: 'table p[aria-label="緩衝區大小"]', // to get the buffer
         video_stats_latency: 'table p[aria-label="實況主延遲"]', // to get the latency
         video_stats_latency_mode: 'table p[aria-label="延遲模式"]', // to get the latency mode
+        player_settings_submenu_latency_mode_input: 'div[role="menuitemcheckbox"] input[data-a-target="tw-toggle"]',
     };
 
-    async function add_quality_on_control(control) {
-        function add_button(parent, textContent, onclick) {
-            const b = document.createElement('button');
-            b.textContent = textContent;
-            b.style = `border: 2px #FFFFFF solid; padding: 2px; border-radius: 4px; background: rgba(0, 0, 0, 0.5); margin: 0px 2px;`;
-            b.onclick = onclick;
-            parent.insertBefore(b, parent.firstChild);
-        }
+    function add_button(parent, classname, textContent, onclick) {
+        const b = document.createElement('button');
+        b.setAttribute('class', classname);
+        b.textContent = textContent;
+        b.onclick = onclick;
+        parent.insertBefore(b, parent.firstChild);
+        return b;
+    }
 
+    async function add_quality_on_control(control) {
         await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
         await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
         await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
         await Waitting.body(selector.player_settings_menu_quality_options).then(async (div) => {
             div.querySelectorAll(selector.player_settings_submenu_quality_option).forEach((submenu, index) => {
+                if (index == 0) return;
                 const input = submenu.querySelector('input');
                 const label = submenu.querySelector('label').textContent.split(' ')[0];
-                if (input.checked) objects.quality = label;
-                if (index != 0) {
-                    add_button(control, label, async () => {
-                        await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-                        await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
-                        await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
-                        await Waitting.body(selector.player_settings_menu_quality_options).then((div) => { div.childNodes[index].click(); });
-                        await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-                        objects.quality = label;
-                    });
-                }
+                const button = add_button(control, 'quality-button-on-video', label, async () => {
+                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
+                    await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_menu_quality_options).then((div) => { div.childNodes[index].click(); });
+                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    objects.quality = label;
+                    control.querySelectorAll('.quality-button-on-video').forEach((b) => { b.removeAttribute('checked'); });
+                    button.setAttribute('checked', '');
+                });
+                if (input.checked) {
+                    objects.quality = label
+                    button.setAttribute('checked', '');
+                };
             });
         });
         await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
@@ -186,9 +237,21 @@ async function player_settings_process(objects) {
         await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
     }
 
+    async function add_latency_mode_toggle_on_control(control) {
+        const button = add_button(control, 'latency-mode-toggle-on-video', objects.latency_mode ? objects.latency_mode.textContent : 'Latency', async () => {
+            await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+            await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
+            await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
+            await Waitting.body(selector.player_settings_submenu_latency_mode_input).then((button) => { button.click(); });
+            await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+            button.textContent = objects.latency_mode ? objects.latency_mode.textContent : 'Latency';
+        });
+    }
+
     Waitting.body(selector.player_control_right).then(async (control) => {
         await add_quality_on_control(control);
         await open_video_status_panel();
+        await add_latency_mode_toggle_on_control(control);
     });
 
 }
@@ -196,6 +259,8 @@ async function player_settings_process(objects) {
 (async function main() {
     try {
         if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
+            add_style(css_video, 'twitch-live-time-on-video');
+
             const objects = {
                 'video': null,
                 'span': null,
@@ -212,15 +277,15 @@ async function player_settings_process(objects) {
             objects.microformat = await get_microformat();
 
             objects.video = await Waitting.body('video[webkit-playsinline]');
-            objects.span = create_span('live-time-on-video', '( ^)o(^ )', `z-index: 1; pointer-events: none; position: absolute; bottom: 0px; left: 4px; text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; font-family: system-ui; font-size: medium;`);
+            objects.span = create_span('live-time-on-video', '( ^)o(^ )');
             objects.video.before(objects.span);
             global_span = objects.span;
 
             objects.volume = await Waitting.body('input[id*="player-volume-slider"]');
 
             if (location.href.includes('/videos/')) {
-                objects.current_time = await Waitting.body('p[data-a-target="player-seekbar-current-time"]', `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`);
-                objects.duration = await Waitting.body('p[data-a-target="player-seekbar-duration"]', `text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;`);
+                objects.current_time = await Waitting.body('p[data-a-target="player-seekbar-current-time"]');
+                objects.duration = await Waitting.body('p[data-a-target="player-seekbar-duration"]');
             }
             else {
                 objects.current_time = await Waitting.body('span.live-time > span');
