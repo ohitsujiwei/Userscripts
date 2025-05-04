@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.8
+// @version     1.0.9
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -186,9 +186,10 @@ async function player_settings_process(objects) {
         player_settings_submenu_latency_mode_input: 'div[role="menuitemcheckbox"] input[data-a-target="tw-toggle"]',
     };
 
-    function add_button(parent, classname, textContent, onclick) {
+    function add_button(parent, classname, id, textContent, onclick) {
         const b = document.createElement('button');
         b.setAttribute('class', classname);
+        if (id) b.setAttribute('id', id);
         b.textContent = textContent;
         b.onclick = () => {
             parent.querySelectorAll('.button-on-video').forEach((e) => { b.disabled = true; e.style.cursor = 'no-drop'; });
@@ -208,19 +209,19 @@ async function player_settings_process(objects) {
                 if (index == 0) return;
                 const input = submenu.querySelector('input');
                 const label = submenu.querySelector('label').textContent.split(' ')[0];
-                const button = add_button(control, 'button-on-video', label, async () => {
+                const button = add_button(control, 'button-on-video', 'quality', label, async () => {
                     await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
                     await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
                     await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
                     await Waitting.body(selector.player_settings_menu_quality_options).then((div) => { div.childNodes[index].click(); });
                     await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-                    objects.quality = label;
-                    control.querySelectorAll('.button-on-video').forEach((b) => { b.removeAttribute('checked'); });
+                    control.querySelectorAll('#quality.button-on-video').forEach((b) => { b.removeAttribute('checked'); });
                     button.setAttribute('checked', '');
+                    objects.quality = label;
                 });
                 if (input.checked) {
-                    objects.quality = label
                     button.setAttribute('checked', '');
+                    objects.quality = label
                 };
             });
         });
@@ -228,10 +229,11 @@ async function player_settings_process(objects) {
     }
 
     async function add_stats_button_on_control(control) {
-        const button = add_button(control, 'button-on-video', 'Stats/Disable', async () => {
+        const button = add_button(control, 'button-on-video', 'stats', 'Stats/Disable', async () => {
             switch (button.textContent) {
                 case 'Stats/Hide': {
                     await Waitting.body(selector.player_overlay_video_stats).then((div) => { div.style.display = ''; });
+                    button.setAttribute('checked', '');
                     button.textContent = 'Stats/Enable';
                     break;
                 }
@@ -244,6 +246,7 @@ async function player_settings_process(objects) {
                     objects.buffer = null;
                     objects.latency = null;
                     objects.latency_mode = null;
+                    button.removeAttribute('checked');
                     button.textContent = 'Stats/Disable';
                     break;
                 }
@@ -261,6 +264,7 @@ async function player_settings_process(objects) {
                         }
                     });
                     await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    button.setAttribute('checked', '');
                     button.textContent = 'Stats/Hide';
                     break;
                 }
@@ -270,7 +274,7 @@ async function player_settings_process(objects) {
     }
 
     async function add_latency_mode_toggle_button_on_control(control) {
-        const button = add_button(control, 'button-on-video', objects.latency_mode ? objects.latency_mode.textContent : 'Latency', async () => {
+        const button = add_button(control, 'button-on-video', 'latency-mode', objects.latency_mode ? objects.latency_mode.textContent : 'Latency', async () => {
             await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
             await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
             await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
