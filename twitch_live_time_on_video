@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.9
+// @version     1.0.10
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -15,6 +15,22 @@ let global_span = null;
 function print(string) {
     global_span ? global_span.textContent = '( ^)o(^ ) -> ' + string : console.log(string);
 }
+
+const selector = {
+    player_control_right: '.player-controls__right-control-group',
+    player_settings_button: 'button[data-a-target="player-settings-button"]', // to open the settings
+    player_settings_menu_item_quality: 'button[data-a-target="player-settings-menu-item-quality"]', // to click the quality option
+    player_settings_menu_quality_options: 'div[data-a-target="player-settings-menu"]', // parent of quality options
+    player_settings_submenu_quality_option: 'div[data-a-target="player-settings-submenu-quality-option"]', // div of each quality option
+    player_settings_root: 'div:has([aria-labelledby="active-settings-menu-header"])', // to hide the process
+    player_settings_menu_item_advanced: 'button[data-a-target="player-settings-menu-item-advanced"]', // to click the advanced option
+    player_settings_submenu_advanced_video_stats_input: 'div[data-a-target="player-settings-submenu-advanced-video-stats"] input', // to open the stats panel
+    player_overlay_video_stats: 'div[data-a-target="player-overlay-video-stats"]', // to hide the stats panel
+    video_stats_buffer: 'table p[aria-label="緩衝區大小"]', // to get the buffer
+    video_stats_latency: 'table p[aria-label="實況主延遲"]', // to get the latency
+    video_stats_latency_mode: 'table p[aria-label="延遲模式"]', // to get the latency mode
+    player_settings_submenu_latency_mode_input: 'div[role="menuitemcheckbox"] input[data-a-target="tw-toggle"]', // to toggle the latency mode
+};
 
 const css_video = `
 
@@ -154,8 +170,16 @@ async function get_microformat() {
     return microformat;
 }
 
+function check_objects_state(objects) {
+    objects.buffer = document.querySelector(selector.video_stats_buffer);
+    objects.latency = document.querySelector(selector.video_stats_latency);
+    objects.latency_mode = document.querySelector(selector.video_stats_latency_mode);
+}
+
 const text_info_value = {};
 function update_text_info_value(objects) {
+    check_objects_state(objects);
+
     text_info_value['time-current'] = objects.current_time?.textContent || '';
     text_info_value['time-separator'] = objects.duration ? '/' : '';
     text_info_value['time-duration'] = objects.duration?.textContent || '';
@@ -170,22 +194,6 @@ function update_text_info_value(objects) {
 }
 
 async function player_settings_process(objects) {
-    const selector = {
-        player_control_right: '.player-controls__right-control-group',
-        player_settings_button: 'button[data-a-target="player-settings-button"]', // to open the settings
-        player_settings_menu_item_quality: 'button[data-a-target="player-settings-menu-item-quality"]', // to click the quality option
-        player_settings_menu_quality_options: 'div[data-a-target="player-settings-menu"]', // parent of quality options
-        player_settings_submenu_quality_option: 'div[data-a-target="player-settings-submenu-quality-option"]', // div of each quality option
-        player_settings_root: 'div:has([aria-labelledby="active-settings-menu-header"])', // to hide the process
-        player_settings_menu_item_advanced: 'button[data-a-target="player-settings-menu-item-advanced"]', // to click the advanced option
-        player_settings_submenu_advanced_video_stats_input: 'div[data-a-target="player-settings-submenu-advanced-video-stats"] input', // to open the stats panel
-        player_overlay_video_stats: 'div[data-a-target="player-overlay-video-stats"]', // to hide the stats panel
-        video_stats_buffer: 'table p[aria-label="緩衝區大小"]', // to get the buffer
-        video_stats_latency: 'table p[aria-label="實況主延遲"]', // to get the latency
-        video_stats_latency_mode: 'table p[aria-label="延遲模式"]', // to get the latency mode
-        player_settings_submenu_latency_mode_input: 'div[role="menuitemcheckbox"] input[data-a-target="tw-toggle"]',
-    };
-
     function add_button(parent, classname, id, textContent, onclick) {
         const b = document.createElement('button');
         b.setAttribute('class', classname);
@@ -201,20 +209,20 @@ async function player_settings_process(objects) {
     }
 
     async function add_quality_button_on_control(control) {
-        await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-        await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
-        await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
+        await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+        await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+        await Waitting.body(selector.player_settings_menu_item_quality).then((b) => { b.click(); });
         await Waitting.body(selector.player_settings_menu_quality_options).then(async (div) => {
             div.querySelectorAll(selector.player_settings_submenu_quality_option).forEach((submenu, index) => {
                 if (index == 0) return;
                 const input = submenu.querySelector('input');
                 const label = submenu.querySelector('label').textContent.split(' ')[0];
                 const button = add_button(control, 'button-on-video', 'quality', label, async () => {
-                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-                    await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
-                    await Waitting.body(selector.player_settings_menu_item_quality).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+                    await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+                    await Waitting.body(selector.player_settings_menu_item_quality).then((b) => { b.click(); });
                     await Waitting.body(selector.player_settings_menu_quality_options).then((div) => { div.childNodes[index].click(); });
-                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
                     control.querySelectorAll('#quality.button-on-video').forEach((b) => { b.removeAttribute('checked'); });
                     button.setAttribute('checked', '');
                     objects.quality = label;
@@ -225,11 +233,12 @@ async function player_settings_process(objects) {
                 };
             });
         });
-        await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+        await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
     }
 
     async function add_stats_button_on_control(control) {
         const button = add_button(control, 'button-on-video', 'stats', 'Stats/Disable', async () => {
+            if (!document.querySelector(selector.player_overlay_video_stats)) { button.textContent = 'Stats/Disable'; }
             switch (button.textContent) {
                 case 'Stats/Hide': {
                     await Waitting.body(selector.player_overlay_video_stats).then((div) => { div.style.display = ''; });
@@ -238,11 +247,13 @@ async function player_settings_process(objects) {
                     break;
                 }
                 case 'Stats/Enable': {
-                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-                    await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
-                    await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
-                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((input) => { input.click(); });
-                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_button).then((b) => {
+                        b.click();
+                    });
+                    await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+                    await Waitting.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
+                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((i) => { i.click(); });
+                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
                     objects.buffer = null;
                     objects.latency = null;
                     objects.latency_mode = null;
@@ -251,10 +262,10 @@ async function player_settings_process(objects) {
                     break;
                 }
                 case 'Stats/Disable': {
-                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-                    await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
-                    await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
-                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((input) => { input.click(); });
+                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+                    await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+                    await Waitting.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
+                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((i) => { i.click(); });
                     await Waitting.body(selector.player_overlay_video_stats).then(async (div) => {
                         div.style.display = 'none';
                         objects.buffer = await Waitting.body(selector.video_stats_buffer);
@@ -263,7 +274,7 @@ async function player_settings_process(objects) {
                             objects.latency_mode = await Waitting.body(selector.video_stats_latency_mode);
                         }
                     });
-                    await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
+                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
                     button.setAttribute('checked', '');
                     button.textContent = 'Stats/Hide';
                     break;
@@ -271,17 +282,24 @@ async function player_settings_process(objects) {
             }
         });
         button.click();
+        await Waitting.body(selector.player_overlay_video_stats);
     }
 
     async function add_latency_mode_toggle_button_on_control(control) {
-        const button = add_button(control, 'button-on-video', 'latency-mode', objects.latency_mode ? objects.latency_mode.textContent : 'Latency', async () => {
-            await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-            await Waitting.body(selector.player_settings_root).then((root) => { root.style.display = 'none'; });
-            await Waitting.body(selector.player_settings_menu_item_advanced).then((button) => { button.click(); });
-            await Waitting.body(selector.player_settings_submenu_latency_mode_input).then((button) => { button.click(); });
-            await Waitting.body(selector.player_settings_button).then((button) => { button.click(); });
-            button.textContent = objects.latency_mode ? objects.latency_mode.textContent : 'Latency';
+        let write_text_once = true;
+        const button = add_button(control, 'button-on-video', 'latency-mode', 'Latency', async () => {
+            await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+            await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+            await Waitting.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
+            await Waitting.body(selector.player_settings_submenu_latency_mode_input).then((i) => {
+                if (!write_text_once) i.click();
+                button.textContent = `Latency/${i.checked ? 'Low' : 'Normal'}`;
+                write_text_once = false;
+            });
+            await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
         });
+        button.click();
+        await Waitting.body(selector.player_settings_submenu_latency_mode_input);
     }
 
     Waitting.body(selector.player_control_right).then(async (control) => {
@@ -289,7 +307,6 @@ async function player_settings_process(objects) {
         await add_stats_button_on_control(control);
         await add_latency_mode_toggle_button_on_control(control);
     });
-
 }
 
 (async function main() {
@@ -312,23 +329,26 @@ async function player_settings_process(objects) {
             };
             objects.microformat = await get_microformat();
 
-            objects.video = await Waitting.body('video[webkit-playsinline]');
-            objects.span = create_span('live-time-on-video', '( ^)o(^ )');
-            objects.video.before(objects.span);
-            global_span = objects.span;
+            Waitting.body('video[webkit-playsinline]').then((e) => {
+                objects.video = e;
+                objects.span = create_span('live-time-on-video', '( ^)o(^ )');
+                objects.video.before(objects.span);
+                global_span = objects.span;
+            });
 
             objects.volume = await Waitting.body('input[id*="player-volume-slider"]');
+            
+            player_settings_process(objects);
 
             if (location.href.includes('/videos/')) {
                 objects.current_time = await Waitting.body('p[data-a-target="player-seekbar-current-time"]');
-                objects.duration = await Waitting.body('p[data-a-target="player-seekbar-duration"]');
+                Waitting.body('p[data-a-target="player-seekbar-duration"]').then((e) => { objects.duration = e; });
             }
             else {
                 objects.current_time = await Waitting.body('span.live-time > span');
                 Waitting.body('p[data-a-target="animated-channel-viewers-count"]').then((e) => { objects.viewer_count = e; });
             }
 
-            player_settings_process(objects);
 
             [[objects.current_time, { subtree:true, characterData:true }], [objects.volume, { attributes:true }]].forEach((e) => {
                 new MutationObserver(() => { update_text_info_value(objects) }).observe(...e);
