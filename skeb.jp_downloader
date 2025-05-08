@@ -1,0 +1,62 @@
+// ==UserScript==
+// @name        skeb.jp Downloader
+// @namespace   Violentmonkey Scripts
+// @match       https://skeb.jp/*
+// @match       https://skeb.jp/*/works/*
+// @grant       GM_download
+// @version     1.0.0
+// @author      Nekone
+// @description 2025/5/9 上午3:22:45
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=skeb.jp
+// ==/UserScript==
+
+'use strict'
+
+async function get_article_image_url() {
+    const json = await fetch(`https://skeb.jp/api/users/${location.href.replace('https://skeb.jp/@', '')}`, {
+        "headers": { "authorization": "Bearer null", "cookie": "", },
+    }).then((response) => {
+        return response.json();
+    }).then((json) => {
+        return json;
+    })
+    console.debug(json);
+    return json.article_image_url;
+}
+
+(async function main() {
+    if (location.href.includes('works')) {
+        new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+                const e = document.querySelector('.image');
+                if (e) {
+                    observer.disconnect();
+                    resolve(e);
+                }
+            });
+            observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+        }).then((parent) => {
+            setTimeout(async () => {
+                const node_first = parent.childNodes[0];
+                const node_clone = node_first.cloneNode(true);
+                parent.insertBefore(node_clone, node_first);
+
+                node_clone.querySelector('img').src = await get_article_image_url();
+
+                const filename_prefix = location.href.replace('https://', '').replaceAll('/', '-');
+                parent.querySelectorAll('img').forEach((img, index) => {
+                    let format = null;
+                    img.src.split('?')[1].split('&').forEach((e) => { if(e.includes('fm')) format = e.split('=')[1]; });
+                    img.style.cursor = 'pointer';
+                    img.title = `[${format}] Click to download`;
+                    img.onclick = () => {
+                        console.debug(`[Download] ${filename_prefix}-${index}.${format}`);
+                        console.debug(`[Download] ${img.src}`);
+                        console.debug(`--------------------------------------------------`);
+                        GM_download(img.src, `${filename_prefix}-${index}.${format}`);
+                    };
+                })
+            }, 1000);
+        })
+    }
+})();
