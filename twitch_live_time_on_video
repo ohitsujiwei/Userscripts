@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.10
+// @version     1.0.11
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -17,6 +17,15 @@ function print(string) {
 }
 
 const selector = {
+    head_microformat_video_release_date: 'meta[property="og:video:release_date"]',
+    head_microformat_live_script: 'script[type="application/ld+json"]',
+
+    video: 'video[webkit-playsinline]',
+    current_time: 'span.live-time > span, p[data-a-target="player-seekbar-current-time"]',
+    duration: 'p[data-a-target="player-seekbar-duration"]',
+    viewer_count: 'p[data-a-target="animated-channel-viewers-count"]',
+
+    player_control_left: '.player-controls__left-control-group',
     player_control_right: '.player-controls__right-control-group',
     player_settings_button: 'button[data-a-target="player-settings-button"]', // to open the settings
     player_settings_menu_item_quality: 'button[data-a-target="player-settings-menu-item-quality"]', // to click the quality option
@@ -26,13 +35,16 @@ const selector = {
     player_settings_menu_item_advanced: 'button[data-a-target="player-settings-menu-item-advanced"]', // to click the advanced option
     player_settings_submenu_advanced_video_stats_input: 'div[data-a-target="player-settings-submenu-advanced-video-stats"] input', // to open the stats panel
     player_overlay_video_stats: 'div[data-a-target="player-overlay-video-stats"]', // to hide the stats panel
+
     video_stats_buffer: 'table p[aria-label="緩衝區大小"]', // to get the buffer
     video_stats_latency: 'table p[aria-label="實況主延遲"]', // to get the latency
     video_stats_latency_mode: 'table p[aria-label="延遲模式"]', // to get the latency mode
+
     player_settings_submenu_latency_mode_input: 'div[role="menuitemcheckbox"] input[data-a-target="tw-toggle"]', // to toggle the latency mode
 };
 
-const css_video = `
+function add_style() {
+    const css = `
 
 .live-time-on-video {
     z-index: 1;
@@ -69,10 +81,8 @@ p[data-a-target*="player-seekbar"] {
 }
 
 `;
-
-function add_style(css, id) {
     const style = document.createElement('style');
-    style.setAttribute('id', id);
+    style.setAttribute('id', 'twitch-live-time-on-video');
     style.textContent = css;
     document.head.appendChild(style);
 }
@@ -141,11 +151,11 @@ function create_span(selector, text, style) {
 function get_video_buffer(video) {
     let seconds = null;
     try { seconds = (video.buffered.end(video.buffered.length - 1) - video.currentTime); }
-    catch (e) { seconds = 0.00; }
+    catch (e) { seconds = 0; }
     finally { return seconds; }
 }
 
-async function get_microformat() {
+function get_microformat() {
     let microformat = {
         '@type': 'VideoObject',
         'description': '',
@@ -161,26 +171,19 @@ async function get_microformat() {
         },
     };
     if (location.href.includes('/videos/')) {
-        microformat.publication.startDate = document.querySelector('meta[property="og:video:release_date"]').content;
+        microformat.publication.startDate = document.querySelector(selector.head_microformat_video_release_date).content;
     }
     else {
-        const json = document.querySelector('script[type="application/ld+json"]');
+        const json = document.querySelector(selector.head_microformat_live_script);
         if (json) microformat = JSON.parse(json.textContent)['@graph'][0];
     }
     return microformat;
 }
 
-function check_objects_state(objects) {
-    objects.buffer = document.querySelector(selector.video_stats_buffer);
-    objects.latency = document.querySelector(selector.video_stats_latency);
-    objects.latency_mode = document.querySelector(selector.video_stats_latency_mode);
-}
-
 const text_info_value = {};
 function update_text_info_value(objects) {
-    check_objects_state(objects);
-
     text_info_value['time-current'] = objects.current_time?.textContent || '';
+    // text_info_value['time-current'] = Formatter.time_from_seconds((Date.now() - new Date(objects.microformat.publication.startDate)) / 1000);
     text_info_value['time-separator'] = objects.duration ? '/' : '';
     text_info_value['time-duration'] = objects.duration?.textContent || '';
     text_info_value['status-buffer-health'] = `(B/${objects.buffer ? objects.buffer?.textContent : get_video_buffer(objects.video).toFixed(2)})`;
@@ -188,13 +191,13 @@ function update_text_info_value(objects) {
     text_info_value['status-view-count'] = objects.viewer_count ? `(V/${objects.viewer_count.textContent})` : '';
     text_info_value['time-date'] = objects.duration ? `(${Formatter.date(objects.microformat?.publication.startDate || '', Formatter.time_to_seconds(objects.current_time?.textContent))})` : '';
     text_info_value['time-now'] = `[${Date().toString().split(' ')[4]}]`;
-    text_info_value['video-status'] = `(${objects.video.playbackRate.toFixed(2)}x/${objects.volume.ariaValueText}${objects.quality ? `/${objects.quality}` : ''})`;
+    text_info_value['video-status'] = `(${objects.video.playbackRate.toFixed(2)}x/${objects.video.muted ? '0%' : `${Math.round(objects.video.volume*100)}%`}${objects.quality ? `/${objects.quality}` : ''})`;
 
     objects.span.textContent = Object.values(text_info_value).join(' ');
 }
 
 async function player_settings_process(objects) {
-    function add_button(parent, classname, id, textContent, onclick) {
+    function add_button(parent, classname, id, textContent, onclick, to_last) {
         const b = document.createElement('button');
         b.setAttribute('class', classname);
         if (id) b.setAttribute('id', id);
@@ -204,7 +207,8 @@ async function player_settings_process(objects) {
             onclick();
             parent.querySelectorAll('.button-on-video').forEach((e) => { b.disabled = false; e.style.cursor = ''; });
         };
-        parent.insertBefore(b, parent.firstChild);
+        if (!to_last) parent.insertBefore(b, parent.firstChild);
+        else parent.appendChild(b);
         return b;
     }
 
@@ -213,8 +217,9 @@ async function player_settings_process(objects) {
         await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
         await Waitting.body(selector.player_settings_menu_item_quality).then((b) => { b.click(); });
         await Waitting.body(selector.player_settings_menu_quality_options).then(async (div) => {
-            div.querySelectorAll(selector.player_settings_submenu_quality_option).forEach((submenu, index) => {
-                if (index == 0) return;
+            const options = div.querySelectorAll(selector.player_settings_submenu_quality_option);
+            options.forEach((submenu, index) => {
+                if (index != 1 && index != options.length - 1) return;
                 const input = submenu.querySelector('input');
                 const label = submenu.querySelector('label').textContent.split(' ')[0];
                 const button = add_button(control, 'button-on-video', 'quality', label, async () => {
@@ -302,17 +307,37 @@ async function player_settings_process(objects) {
         await Waitting.body(selector.player_settings_submenu_latency_mode_input);
     }
 
+    async function add_live_clock_reload_button_on_control(control) {
+        const button = add_button(control, 'button-on-video', 'live-clock', 'Reload', async () => {
+            objects.current_time = document.querySelector(selector.current_time);
+            objects.viewer_count = document.querySelector(selector.viewer_count);
+            objects.duration = document.querySelector(selector.duration);
+
+            objects.buffer = document.querySelector(selector.video_stats_buffer);
+            objects.latency = document.querySelector(selector.video_stats_latency);
+            objects.latency_mode = document.querySelector(selector.video_stats_latency_mode);
+
+            objects.live_clock_oberver.disconnect();
+            objects.live_clock_oberver.observe(objects.current_time, { subtree:true, characterData:true });
+            console.debug(objects);
+        });
+    }
+
     Waitting.body(selector.player_control_right).then(async (control) => {
         await add_quality_button_on_control(control);
         await add_stats_button_on_control(control);
         await add_latency_mode_toggle_button_on_control(control);
+        await add_live_clock_reload_button_on_control(control);
     });
+
+    // Waitting.body(selector.player_control_left).then(async (control) => {
+    // });
 }
 
 (async function main() {
     try {
         if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
-            add_style(css_video, 'twitch-live-time-on-video');
+            add_style();
 
             const objects = {
                 'video': null,
@@ -326,33 +351,30 @@ async function player_settings_process(objects) {
                 'buffer': null,
                 'latency': null,
                 'latency_mode': null,
+                'live_clock_oberver': null,
             };
-            objects.microformat = await get_microformat();
+            objects.microformat = get_microformat();
 
-            Waitting.body('video[webkit-playsinline]').then((e) => {
+            Waitting.body(selector.video).then((e) => {
                 objects.video = e;
                 objects.span = create_span('live-time-on-video', '( ^)o(^ )');
                 objects.video.before(objects.span);
                 global_span = objects.span;
             });
 
-            objects.volume = await Waitting.body('input[id*="player-volume-slider"]');
-            
             player_settings_process(objects);
 
             if (location.href.includes('/videos/')) {
-                objects.current_time = await Waitting.body('p[data-a-target="player-seekbar-current-time"]');
-                Waitting.body('p[data-a-target="player-seekbar-duration"]').then((e) => { objects.duration = e; });
+                Waitting.body(selector.duration).then((e) => { objects.duration = e; });
             }
             else {
-                objects.current_time = await Waitting.body('span.live-time > span');
-                Waitting.body('p[data-a-target="animated-channel-viewers-count"]').then((e) => { objects.viewer_count = e; });
+                Waitting.body(selector.viewer_count).then((e) => { objects.viewer_count = e; });
             }
+            objects.current_time = await Waitting.body(selector.current_time);
 
-
-            [[objects.current_time, { subtree:true, characterData:true }], [objects.volume, { attributes:true }]].forEach((e) => {
-                new MutationObserver(() => { update_text_info_value(objects) }).observe(...e);
-            });
+            objects.live_clock_oberver = new MutationObserver(() => { update_text_info_value(objects) });
+            objects.live_clock_oberver.observe(objects.current_time, { subtree:true, characterData:true });
+            // console.debug(objects);
 
             // objects.video.ontimeupdate = () => { update_text_info_value(objects) };
 
