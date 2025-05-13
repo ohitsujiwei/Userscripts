@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.0
+// @version     3.1.1
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -30,17 +30,6 @@
 // - 'device_follow.json'           for https://x.com/i/timeline            (2025/05/13)
 
 const filename = '{user-id}-{status-id}';
-
-const language = {
-    en: {
-        download: 'Download',
-        completed: 'Download Completed',
-    },
-    'zh-Hant': {
-        download: '下載',
-        completed: '下載完成',
-    }
-}[document.querySelector('html').lang || navigator.language || 'en'];
 
 const xhr_keywords = {
     api: [
@@ -113,7 +102,7 @@ async function get_tweet_response_data(response) {
 })();
 
 
-class TMD {
+class TwitterMediaDownloader {
     constructor() {
         this.css = (() => {
             return `
@@ -500,4 +489,4 @@ class TMD {
     }
 }
 
-new TMD();
+new TwitterMediaDownloader();
