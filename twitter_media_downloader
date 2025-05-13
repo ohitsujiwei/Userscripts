@@ -1,0 +1,449 @@
+// ==UserScript==
+// @name        Twitter Media Downloader V3
+// @description Violentmonkey Scripts
+// @version     3.0.0
+// @author      Nekone
+// @match       https://x.com/*
+// @match       https://twitter.com/*
+// @grant       GM_setValue
+// @grant       GM_getValue
+// @grant       GM_download
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=twitter.com
+// @run-at      document-start
+// ==/UserScript==
+
+'use strict';
+
+// TODO:
+// - 'HomeTimeline'                 for https://x.com/home with recommend
+// - 'HomeLatestTimeline'           for https://x.com/home with following
+// - 'ListLatestTweetsTimeline'     for https://x.com/home with list
+//                                  and https://x.com/i/lists/*
+// - 'Bookmarks'                    for https://x.com/i/bookmarks
+//
+// Not necessary:
+// - 'CommunitiesExploreTimeline'   for https://x.com/i/bookmarks
+//
+// Done:
+// - 'UserMedia'                    for https://x.com/*/media               (2025/05/13)
+// - 'TweetDetail'                  for https://x.com/*/status/*            (2025/05/13)
+// - 'device_follow.json'           for https://x.com/i/timeline            (2025/05/13)
+
+const language = {
+    en: {
+        download: 'Download',
+        completed: 'Download Completed',
+    },
+    'zh-Hant': {
+        download: '下載',
+        completed: '下載完成',
+    }
+}[document.querySelector('html').lang || navigator.language || 'en'];
+
+const xhr_keywords = {
+    api: [
+        'HomeTimeline',
+        'device_follow.json',
+        'TweetDetail',
+        'UserMedia',
+    ]
+}
+
+let items_li = [];
+let items_article = [];
+
+async function add_download_button(response) {
+    const json = JSON.parse(response.responseText);
+    const api = response.responseURL.split('?').shift().split('/').pop();
+    console.debug(api);
+    console.debug(json);
+    switch (api) {
+        case 'device_follow.json': {
+            Object.entries(json.globalObjects.tweets).forEach(([key, value]) => {
+                items_article.push({
+                    rest_id: key,
+                    legacy: value,
+                    core: { user_results: { result: { legacy: json.globalObjects.users[value.user_id_str], }, }, },
+                });
+            });
+            break;
+        }
+        case 'TweetDetail': {
+            json.data.threaded_conversation_with_injections_v2.instructions.find(e => e.type === "TimelineAddEntries").entries.forEach((entry) => {
+                if (entry.entryId.includes('tweet-')) {
+                    items_article.push(entry.content.itemContent.tweet_results.result);
+                }
+                else if (entry.entryId.includes('conversationthread-')) {
+                    entry.content.items.forEach((item) => {
+                        if (item.entryId.includes('tweet-')) {
+                            items_article.push(item.item.itemContent.tweet_results.result);
+                        }
+                    });
+                }
+            });
+            break;
+        }
+        case 'UserMedia': {
+            json.data.user.result.timeline.timeline.instructions.forEach((instruction) => {
+                if (instruction.type === 'TimelineAddEntries') {
+                    const entries = instruction.entries.find(e => e.entryId.includes('profile-grid'));
+                    if (entries) items_li = items_li.concat(entries.content.items.map(e => e.item.itemContent.tweet_results.result));
+                }
+                else if (instruction.type === 'TimelineAddToModule') {
+                    items_li = items_li.concat(instruction.moduleItems.map(e => e.item.itemContent.tweet_results.result));
+                }
+            });
+            break;
+        }
+    }
+}
+
+(function override_xhr_send() {
+    const original_send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(body) {
+        this.addEventListener('readystatechange', () => {
+            if (this.readyState === 4 && xhr_keywords.api.some(e => this.responseURL.includes(e))) {
+                // console.debug(this);
+                add_download_button(this);
+            }
+        });
+        return original_send.apply(this, arguments);
+    };
+})();
+
+const filename = '{user-id}-{status-id}';
+
+const TwitterMediaDownload = (function () {
+    let history;
+    return {
+        init: async function () {
+            document.head.insertAdjacentHTML('beforeend', '<style>' + this.css + '</style>');
+
+            await this.storage();
+
+            const observer = new MutationObserver((array) => {
+                array.forEach((mutation_record) => {
+                    mutation_record.addedNodes.forEach((node) => {
+                        if (node.tagName == 'IMG') {
+                            // console.debug(node);
+                            const li = node.closest('li[role="listitem"][id*="verticalGridItem"]:not(:has(.tmd-media))');
+                            if (li) {
+                                this.add_button_to_media_tab(li);
+                            }
+                        }
+                        this.detect_node(node);
+                    });
+                });
+            });
+            // observer.observe(document.body, { childList: true, subtree: true });
+            observer.observe(document, { childList: true, subtree: true });
+        },
+        detect_node: function (node) {
+            try {
+                if (node.dataset?.testid == 'cellInnerDiv' || node?.ariaLabel == "語音貼文" || node?.ariaLabel == "嵌入的影片") {
+                    const article = node.querySelector('article[data-testid="tweet"]:has(a[href*="photo"])') || node.closest('article');
+                    if (article) {
+                        this.add_button_to_article(article);
+                        this.add_button_to_article_on_photo(article);
+                    }
+                }
+            }
+            catch (e) {
+                console.log(node)
+                console.log(e)
+            }
+        },
+        add_button_to_article: async function (article) {
+            if (article.querySelector('.tmd-down')) return;
+
+            const status_id = article.querySelector('a[href*="/status/"]')?.href.split('/status/').pop().split('/').shift();
+            if (!status_id) return;
+
+            const image = article.querySelector('a[href*="/photo/"]');
+            if (image) {
+                const image_status_id = image.href.split('/status/').pop().split('/').shift();
+                if (image_status_id != status_id) {
+                    // console.log(`ID different, maybe quote.\ntweet_status_id = ${status_id}\nimage_status_id = ${image_status_id}`)
+                    return;
+                }
+            }
+
+            // const video = article.querySelector('button[data-testid="playButton"]');
+            // const audio = article.querySelector('div[role="presentation"]');
+
+            const button_group = article.querySelector('div[role="group"]');
+            const button_download = button_group.lastChild.cloneNode(true);
+            button_download.querySelector('svg').innerHTML = this.svg;
+            const is_exist = history.includes(status_id);
+            this.status(button_download, 'tmd-down');
+            this.status(button_download, is_exist ? 'completed' : 'download', is_exist ? language.completed : language.download);
+            button_group.appendChild(button_download)
+            button_download.onclick = () => this.button_download_onclick(button_download, status_id, is_exist, null, items_article.find(e => e.rest_id === status_id));
+        },
+        add_button_to_article_on_photo: async function (article) {
+            const photos = article.querySelectorAll('a[href*="/photo/"]');
+            photos.forEach((photo) => {
+                if (photo.parentNode.querySelector('.tmd-down')) return;
+                const [status_id, index] = photo.href.split('/status/').pop().split('/photo/');
+                const is_exist = history.includes(status_id);
+                const button_download = document.createElement('div');
+                button_download.innerHTML = '<div><div><svg viewBox="0 0 24 24" style="width: 18px; height: 18px;">' + this.svg + '</svg></div></div>';
+                button_download.classList.add('tmd-down', 'tmd-img');
+                this.status(button_download, 'download');
+                photo.parentNode.appendChild(button_download);
+                button_download.onclick = (e) => {
+                    e.preventDefault();
+                    this.button_download_onclick(button_download, status_id, is_exist, index, items_article.find(e => e.rest_id === status_id || e.id_str === status_id));
+                }
+            });
+        },
+        add_button_to_media_tab: function (li) {
+            if (li.querySelector('.tmd-media')) return;
+
+            const status_id = li.querySelector('a[href*="/status/"]')?.href.split('/status/').pop().split('/').shift();
+            if (!status_id) return;
+
+            const is_exist = history.includes(status_id);
+            const button_download = document.createElement('div');
+            button_download.innerHTML = '<div><div><svg viewBox="0 0 24 24" style="width: 18px; height: 18px;">' + this.svg + '</svg></div></div>';
+            button_download.classList.add('tmd-down', 'tmd-media');
+            this.status(button_download, is_exist ? 'completed' : 'download', is_exist ? language.completed : language.download);
+            li.appendChild(button_download);
+            button_download.onclick = () => this.button_download_onclick(button_download, status_id, is_exist, null, items_li.find(e => e.rest_id === status_id));
+        },
+        button_download_onclick: async function (btn, status_id, is_exist, index, json_dict) {
+            if (!json_dict) {
+                this.status(btn, 'failed');
+                return;
+            }
+
+            if (btn.classList.contains('loading')) return;
+            this.status(btn, 'loading');
+            let out = (await GM_getValue('filename', filename)).split('\n').join('');
+            let save_history = await GM_getValue('save_history', true);
+            let json = json_dict;
+
+            // console.debug(json);
+            // this.status(btn, 'completed', language.completed);
+
+            let tweet = json.legacy;
+            let user = json.core.user_results.result.legacy;
+            let invalid_chars = { '\\': '＼', '\/': '／', '\|': '｜', '<': '＜', '>': '＞', ':': '：', '*': '＊', '?': '？', '"': '＂', '\u200b': '', '\u200c': '', '\u200d': '', '\u2060': '', '\ufeff': '', '🔞': '' };
+            let datetime = out.match(/{date-time(-local)?:[^{}]+}/) ? out.match(/{date-time(?:-local)?:([^{}]+)}/)[1].replace(/[\\/|<>*?:"]/g, v => invalid_chars[v]) : 'YYYYMMDD-hhmmss';
+            let info = {};
+            info['status-id'] = status_id;
+            info['user-name'] = user.name.replace(/([\\/|*?:"]|[\u200b-\u200d\u2060\ufeff]|🔞)/g, v => invalid_chars[v]);
+            info['user-id'] = user.screen_name;
+            info['date-time'] = this.formatDate(tweet.created_at, datetime);
+            info['date-time-local'] = this.formatDate(tweet.created_at, datetime, true);
+            info['full-text'] = tweet.full_text.split('\n').join(' ').replace(/\s*https:\/\/t\.co\/\w+/g, '').replace(/[\\/|<>*?:"]|[\u200b-\u200d\u2060\ufeff]/g, v => invalid_chars[v]);
+            let medias = tweet.extended_entities && tweet.extended_entities.media;
+            if (index) medias = [medias[index - 1]];
+            if (medias.length > 0) {
+                let tasks = medias.length;
+                let tasks_result = [];
+                medias.forEach((media, i) => {
+                    info.url = media.type == 'photo' ? media.media_url_https + ':orig' : media.video_info.variants.filter(n => n.content_type == 'video/mp4').sort((a, b) => b.bitrate - a.bitrate)[0].url;
+                    // console.log(info.url)
+                    // console.log(media)
+                    info.file = info.url.split('/').pop().split(/[:?]/).shift();
+                    info['file-name'] = info.file.split('.').shift();
+                    info['file-ext'] = info.file.split('.').pop();
+                    info['file-type'] = media.type.replace('animated_', '');
+                    info.out = (out.replace(/\.?{file-ext}/, '') + ((medias.length > 1 || index) && !out.match('{file-name}') ? '-' + (index ? index - 1 : i) : '') + '.{file-ext}').replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => info[name]);
+
+                    // console.debug(info.url);
+                    // console.debug(info.out);
+                    // return;
+
+                    this.downloader.add({
+                        url: info.url,
+                        name: info.out,
+                        onload: () => {
+                            tasks -= 1;
+                            tasks_result.push(((medias.length > 1 || index) ? (index ? index : i + 1) + ': ' : '') + language.completed);
+                            this.status(btn, null, tasks_result.sort().join('\n'));
+                            if (tasks === 0) {
+                                this.status(btn, 'completed', language.completed);
+                                if (save_history && !is_exist) {
+                                    this.storage(status_id);
+                                }
+                            }
+                        },
+                        onerror: result => {
+                            tasks = -1;
+                            tasks_result.push((medias.length > 1 ? i + 1 + ': ' : '') + result.details.current);
+                            this.status(btn, 'failed', tasks_result.sort().join('\n'));
+                        }
+                    });
+                });
+            }
+            else {
+                this.status(btn, 'failed', 'MEDIA_NOT_FOUND');
+            }
+        },
+        status: function (btn, css, title, style) {
+            if (css) {
+                btn.classList.remove('download', 'completed', 'loading', 'failed');
+                btn.classList.add(css);
+            }
+            if (title) btn.title = title;
+            if (style) btn.style.cssText = style;
+        },
+        storage: async function (status_id) {
+            history = await GM_getValue('download_history', []);
+            if (status_id) {
+                if (!history.includes(status_id)) {
+                    history.push(status_id);
+                    GM_setValue('download_history', history);
+                }
+            }
+        },
+        formatDate: function (i, o, tz) {
+            let d = new Date(i);
+            if (tz) d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+            let m = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            let v = {
+                YYYY: d.getUTCFullYear().toString(),
+                YY: d.getUTCFullYear().toString(),
+                MM: d.getUTCMonth() + 1,
+                MMM: m[d.getUTCMonth()],
+                DD: d.getUTCDate(),
+                hh: d.getUTCHours(),
+                mm: d.getUTCMinutes(),
+                ss: d.getUTCSeconds(),
+                h2: d.getUTCHours() % 12,
+                ap: d.getUTCHours() < 12 ? 'AM' : 'PM'
+            };
+            return o.replace(/(YY(YY)?|MMM?|DD|hh|mm|ss|h2|ap)/g, n => ('0' + v[n]).substr(-n.length));
+        },
+        downloader: (function () {
+            let tasks = [], thread = 0, max_thread = 2, retry = 0, max_retry = 2, failed = 0, notifier, has_failed = false;
+            return {
+                add: function (task) {
+                    tasks.push(task);
+                    if (thread < max_thread) {
+                        thread += 1;
+                        this.next();
+                    } else this.update();
+                },
+                next: async function () {
+                    let task = tasks.shift();
+                    await this.start(task);
+                    if (tasks.length > 0 && thread <= max_thread) this.next();
+                    else thread -= 1;
+                    this.update();
+                },
+                start: function (task) {
+                    this.update();
+                    return new Promise(resolve => {
+                        GM_download({
+                            url: task.url,
+                            name: task.name,
+                            onload: result => {
+                                task.onload();
+                                resolve();
+                            },
+                            onerror: result => {
+                                this.retry(task, result);
+                                resolve();
+                            },
+                            ontimeout: result => {
+                                this.retry(task, result);
+                                resolve();
+                            }
+                        });
+                    });
+                },
+                retry: function (task, result) {
+                    retry += 1;
+                    if (retry == 3) max_thread = 1;
+                    if (task.retry && task.retry >= max_retry ||
+                        result.details && result.details.current == 'USER_CANCELED') {
+                        task.onerror(result);
+                        failed += 1;
+                    } else {
+                        if (max_thread == 1) task.retry = (task.retry || 0) + 1;
+                        this.add(task);
+                    }
+                },
+                update: function () {
+                    if (!notifier) {
+                        notifier = document.createElement('div');
+                        notifier.title = 'Twitter Media Downloader';
+                        notifier.classList.add('tmd-notifier');
+                        notifier.innerHTML = '<label>0</label>|<label>0</label>';
+                        document.body.appendChild(notifier);
+                    }
+                    if (failed > 0 && !has_failed) {
+                        has_failed = true;
+                        notifier.innerHTML += '|';
+                        let clear = document.createElement('label');
+                        notifier.appendChild(clear);
+                        clear.onclick = () => {
+                            notifier.innerHTML = '<label>0</label>|<label>0</label>';
+                            failed = 0;
+                            has_failed = false;
+                            this.update();
+                        };
+                    }
+                    notifier.firstChild.innerText = thread;
+                    notifier.firstChild.nextElementSibling.innerText = tasks.length;
+                    if (failed > 0) notifier.lastChild.innerText = failed;
+                    if (thread > 0 || tasks.length > 0 || failed > 0) notifier.classList.add('running');
+                    else notifier.classList.remove('running');
+                }
+            };
+        })(),
+        css: `
+.tmd-down {margin-left: 12px; order: 99;}
+.tmd-down:hover > div > div > div > div {color: rgba(29, 161, 242, 1.0);}
+.tmd-down:hover > div > div > div > div > div {background-color: rgba(29, 161, 242, 0.1);}
+.tmd-down:active > div > div > div > div > div {background-color: rgba(29, 161, 242, 0.2);}
+.tmd-down:hover svg {color: rgba(29, 161, 242, 1.0);}
+.tmd-down:hover div:first-child:not(:last-child) {background-color: rgba(29, 161, 242, 0.1);}
+.tmd-down:active div:first-child:not(:last-child) {background-color: rgba(29, 161, 242, 0.2);}
+
+.tmd-down.tmd-media {position: absolute; right: 0;}
+.tmd-down.tmd-media > div {display: flex; border-radius: 99px; margin: 2px;}
+.tmd-down.tmd-media > div > div {display: flex; margin: 6px; color: #fff;}
+.tmd-down.tmd-media:hover > div {background-color: rgba(255,255,255, 0.6);}
+.tmd-down.tmd-media:hover > div > div {color: rgba(29, 161, 242, 1.0);}
+.tmd-down.tmd-media:not(:hover) > div > div {filter: drop-shadow(0 0 1px #000);}
+
+.tmd-down g {display: none;}
+.tmd-down.download g.download, .tmd-down.completed g.completed, .tmd-down.loading g.loading,.tmd-down.failed g.failed {display: unset;}
+.tmd-down.loading svg {animation: spin 1s linear infinite;}
+@keyframes spin {0% {transform: rotate(0deg);} 100% {transform: rotate(360deg);}}
+.tmd-btn {display: inline-block; background-color: #1DA1F2; color: #FFFFFF; padding: 0 20px; border-radius: 99px;}
+.tmd-tag {display: inline-block; background-color: #FFFFFF; color: #1DA1F2; padding: 0 10px; border-radius: 10px; border: 1px solid #1DA1F2;  font-weight: bold; margin: 5px;}
+.tmd-btn:hover {background-color: rgba(29, 161, 242, 0.9);}
+.tmd-tag:hover {background-color: rgba(29, 161, 242, 0.1);}
+
+.tmd-notifier {display: none; position: fixed; left: 16px; bottom: 16px; color: #000; background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 4px;}
+.tmd-notifier.running {display: flex; align-items: center;}
+.tmd-notifier label {display: inline-flex; align-items: center; margin: 0 8px;}
+.tmd-notifier label:before {content: " "; width: 32px; height: 16px; background-position: center; background-repeat: no-repeat;}
+.tmd-notifier label:nth-child(1):before {background-image:url("data:image/svg+xml;charset=utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22><path d=%22M3,14 v5 q0,2 2,2 h14 q2,0 2,-2 v-5 M7,10 l4,4 q1,1 2,0 l4,-4 M12,3 v11%22 fill=%22none%22 stroke=%22%23666%22 stroke-width=%222%22 stroke-linecap=%22round%22 /></svg>");}
+.tmd-notifier label:nth-child(2):before {background-image:url("data:image/svg+xml;charset=utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22><path d=%22M12,2 a1,1 0 0 1 0,20 a1,1 0 0 1 0,-20 M12,5 v7 h6%22 fill=%22none%22 stroke=%22%23999%22 stroke-width=%222%22 stroke-linejoin=%22round%22 stroke-linecap=%22round%22 /></svg>");}
+.tmd-notifier label:nth-child(3):before {background-image:url("data:image/svg+xml;charset=utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22><path d=%22M12,0 a2,2 0 0 0 0,24 a2,2 0 0 0 0,-24%22 fill=%22%23f66%22 stroke=%22none%22 /><path d=%22M14.5,5 a1,1 0 0 0 -5,0 l0.5,9 a1,1 0 0 0 4,0 z M12,17 a2,2 0 0 0 0,5 a2,2 0 0 0 0,-5%22 fill=%22%23fff%22 stroke=%22none%22 /></svg>");}
+
+.tmd-down.tmd-img {position: absolute; right: 0; bottom: 0; display: none !important;}
+.tmd-down.tmd-img > div {display: flex; border-radius: 99px; margin: 2px; background-color: rgba(255,255,255, 0.6);}
+.tmd-down.tmd-img > div > div {display: flex; margin: 6px; color: #fff !important;}
+.tmd-down.tmd-img:not(:hover) > div > div {filter: drop-shadow(0 0 1px #000);}
+.tmd-down.tmd-img:hover > div > div {color: rgba(29, 161, 242, 1.0);}
+:hover > .tmd-down.tmd-img, .tmd-img.loading, .tmd-img.completed, .tmd-img.failed {display: block !important;}
+.tweet-detail-action-item {width: 20% !important;}
+`,
+        svg: `
+<g class="download"><path d="M3,14 v5 q0,2 2,2 h14 q2,0 2,-2 v-5 M7,10 l4,4 q1,1 2,0 l4,-4 M12,3 v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></g>
+<g class="completed"><path d="M3,14 v5 q0,2 2,2 h14 q2,0 2,-2 v-5 M7,10 l3,4 q1,1 2,0 l8,-11" fill="none" stroke="#1DA1F2" stroke-width="2" stroke-linecap="round" /></g>
+<g class="loading"><circle cx="12" cy="12" r="10" fill="none" stroke="#1DA1F2" stroke-width="4" opacity="0.4" /><path d="M12,2 a10,10 0 0 1 10,10" fill="none" stroke="#1DA1F2" stroke-width="4" stroke-linecap="round" /></g>
+<g class="failed"><circle cx="12" cy="12" r="11" fill="#f33" stroke="currentColor" stroke-width="2" opacity="0.8" /><path d="M14,5 a1,1 0 0 0 -4,0 l0.5,9.5 a1.5,1.5 0 0 0 3,0 z M12,17 a2,2 0 0 0 0,4 a2,2 0 0 0 0,-4" fill="#fff" stroke="none" /></g>
+`
+    };
+})();
+
+TwitterMediaDownload.init();
+
