@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.3
+// @version     3.1.4
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -422,8 +422,10 @@ this.selector.download_button_photo
         };
     }
 
-    async add_to_photo_download_button(node) {
+    async add_to_article_photo_download_button(node) {
         if (!node.src.includes('/media/')) return;
+
+        if (!node.closest('article')) return;
 
         const photo = node.closest('a[href*="/photo/"]');
         if (!photo) return;
@@ -581,7 +583,7 @@ this.selector.download_button_photo
 
     parsing_node(node) {
         if (node.tagName == 'IMG') {
-            this.add_to_photo_download_button(node);
+            this.add_to_article_photo_download_button(node);
             this.add_to_media_tab_download_button(node);
             this.add_to_article_time(node);
             this.add_to_article_pixiv(node);
