@@ -14,7 +14,7 @@
 
 'use strict';
 
-// TODO:
+// TODO: (Lazy to do.)
 // - 'HomeTimeline'                 for https://x.com/home with recommend
 // - 'HomeLatestTimeline'           for https://x.com/home with following
 // - 'ListLatestTweetsTimeline'     for https://x.com/home with list
@@ -524,13 +524,13 @@ class TwitterMediaDownloader {
 
     parsing_node(node) {
         if (node.tagName == 'IMG') {
-            // this.add_to_media_tab_download_button(node);
+            this.add_to_media_tab_download_button(node);
             this.add_to_article_time(node);
             this.add_to_article_pixiv(node);
             this.add_to_user_page_pixiv_input(node);
         }
 
-        // this.detect_node(node);
+        this.detect_node(node);
     }
 
     observer_document() {
@@ -543,18 +543,12 @@ class TwitterMediaDownloader {
     detect_node(node) {
         // document.querySelector('article img[src*="video"]')
 
-        try {
-            if (node.dataset?.testid == 'cellInnerDiv' || node?.ariaLabel == "語音貼文" || node?.ariaLabel == "嵌入的影片") {
-                const article = node.querySelector('article[data-testid="tweet"]:has(a[href*="photo"])') || node.closest('article');
-                if (article) {
-                    this.add_button_to_article(article);
-                    this.add_button_to_article_on_photo(article);
-                }
+        if (node.dataset?.testid == 'cellInnerDiv' || node?.ariaLabel == "語音貼文" || node?.ariaLabel == "嵌入的影片") {
+            const article = node.querySelector('article[data-testid="tweet"]:has(a[href*="photo"])') || node.closest('article');
+            if (article) {
+                this.add_button_to_article(article);
+                this.add_button_to_article_on_photo(article);
             }
-        }
-        catch (e) {
-            console.log(node)
-            console.log(e)
         }
     }
 
