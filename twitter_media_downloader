@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.1
+// @version     3.1.2
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -203,8 +203,24 @@ class TwitterMediaDownloader {
         this.selector.download_button_media_tab = `tmd-media`;
         this.selector.media_tab_element_li = `li[role="listitem"][id*="verticalGridItem"]:not(:has(.${this.selector.download_button_media_tab}))`;
 
-        console.debug(this);
+        this.time_split = '·';
+        this.pixiv_html = (() => {
+            return `
+<div id="pixiv-container" style="display: flex; flex-direction: column; flex: 0 1 auto; padding: 0px 10px;">
+    <div style="display: flex; flex: 0 1 auto; padding-bottom: 4px;">
+        <span id="pixiv-input-title" style="display: flex; font-family: Segoe UI; padding-right: 4px; flex: 0 2 auto; width: 100%;">Pixiv ID</span>
+        <input id="pixiv-input" type="text" style="display: flex; font-family: Segoe UI; flex: 0 1 auto; width: 100%; background: #404040; border: #FFFFFF solid 1px;">
+    </div>
+    <input id="pixiv-button" type="button" value="GM_setValue" style="display: flex; font-family: Segoe UI; flex: 0 1 auto; background: #404040; border: #FFFFFF solid 1px;">
+    <div style="display: flex; flex: 0 1 auto;">
+        <span id="pixiv-result" style="display: flex; font-family: Segoe UI; flex: 0 1 auto;"></span>
+        <a id="pixiv-link" target="_blank" style="display: flex; font-family: Segoe UI; flex: 0 1 auto; color: #1D9BF0; text-decoration: underline;"></a>
+    </div>
+</div>`
+        })();
+
         this.observer_document();
+        console.debug(this);
     }
 
     update_download_history(status_id) {
@@ -253,10 +269,6 @@ class TwitterMediaDownloader {
     }
 
     onclick_download_button(button, status_id, index, data) {
-        console.debug(button);
-        console.debug(status_id);
-        console.debug(index);
-        console.debug(data);
         if (!data) {
             this.update_download_button(button, this.download_button_status.failed);
             return;
@@ -396,8 +408,10 @@ class TwitterMediaDownloader {
         };
     }
 
-    async add_download_button_to_media_tab(node) {
-        const li = node.closest(this.selector.media_tab_element_li);
+    async add_to_media_tab_download_button(node) {
+        if (!node.src.includes('/media/')) return;
+
+        const li = node.closest('li[role="listitem"][id*="verticalGridItem"]:not(:has(.tmd-media))');
         if (!li) return;
 
         const status_id = li.querySelector('a[href*="/status/"]')?.href.split('/status/').pop().split('/').shift();
@@ -411,14 +425,112 @@ class TwitterMediaDownloader {
         li.appendChild(button);
     }
 
-    parsing_node(node) {
-        if (node.tagName == 'IMG') {
-            const li = node.closest('li[role="listitem"][id*="verticalGridItem"]:not(:has(.tmd-media))');
-            if (li) {
-                this.add_download_button_to_media_tab(li);
+    async add_to_article_time(node) {
+        if (!node.src.includes('/profile_images/')) return;
+
+        const article = node.closest('article:has(time)');
+        if (!article) return;
+
+        article.querySelectorAll('time:not([time-added]').forEach((time) => {
+            const date = new Date(time.dateTime);
+            if (isNaN(date)) return;
+
+            time.setAttribute('time-added', '');
+            if (time.textContent.includes(this.time_split)) {
+                time.textContent = [new Date(time.dateTime).toLocaleTimeString(), ...time.textContent.split(' ').slice(1, 3)].join(' ');
+            }
+            else {
+                time.textContent = `${time.textContent} ${this.time_split} ${new Date(time.dateTime).toLocaleString('zh-tw', { hourCycle:'h24' })}`;
+            }
+
+        });
+    }
+
+    async add_to_article_pixiv(node) {
+        if (!node.src.includes('/media/')) return;
+
+        const article = node.closest('article:has(time)');
+        if (!article) return;
+
+        const time = article.querySelector('time:not([pixiv-added])');
+        if (!time) return;
+
+        if (article.querySelector('img[src*="/media/"]')) {
+            const a = time.closest('a');
+            const pixiv_id = this.get_pixiv_id(a.href);
+            if (pixiv_id) {
+                const parent = a?.parentElement.parentElement;
+                if (parent) {
+                    time.setAttribute('pixiv-added', '');
+                    parent.appendChild(parent.childNodes[1].cloneNode(true));
+                    const pixiv_element = document.createElement('a');
+                    parent.appendChild(pixiv_element);
+                    pixiv_element.innerHTML = `<a id="pixiv-tweet-link" href="https://www.pixiv.net/users/${pixiv_id}/illustrations" target="_blank" style="font-family: Segoe UI; color: #1D9BF0; text-decoration: underline;">Pixiv</a>`;
+                }
             }
         }
-        this.detect_node(node);
+    }
+
+    async add_to_user_page_pixiv_input(node) {
+        if (!node.src.includes('/profile_images/') || !node?.alt.includes('開啟個人資料相片')) return;
+
+        const user_avatar_container = node.closest('div[data-testid*="UserAvatar-Container"]');
+        if (!user_avatar_container) return;
+
+        if (document.querySelector('#pixiv_container')) return;
+
+        const pixiv_container = document.createElement('div');
+        user_avatar_container.after(pixiv_container);
+        user_avatar_container.parentElement.style.flexWrap = 'nowrap';
+        pixiv_container.innerHTML = this.pixiv_html;
+
+        const i = pixiv_container.querySelector('#pixiv-input');
+        const b = pixiv_container.querySelector('#pixiv-button');
+        const l = pixiv_container.querySelector('#pixiv-link');
+        const r = pixiv_container.querySelector('#pixiv-result');
+        const pixiv_id = this.get_pixiv_id(location.href);
+        if (pixiv_id) {
+            i.value = pixiv_id;
+            i.readOnly = true;
+            b.disabled = true;
+            l.textContent = `pixiv.net/users/${pixiv_id}`;
+            l.href = `https://www.pixiv.net/users/${pixiv_id}/illustrations`;
+        }
+        b.onclick = () => {
+            const pixiv_id_input = i.value;
+            if (Number.isInteger(Number(pixiv_id_input)) && pixiv_id_input != '') {
+                const pixiv_id_list = GM_getValue('pixiv_id', {});
+                const twitter_id = location.href.toLowerCase().split('/')[3];
+                pixiv_id_list[twitter_id] = pixiv_id_input;
+                GM_setValue('pixiv_id', pixiv_id_list);
+                i.readOnly = true;
+                b.disabled = true;
+                r.textContent = '';
+                l.textContent = `pixiv.net/users/${pixiv_id_input}`;
+                l.href = `https://www.pixiv.net/users/${pixiv_id_input}/illustrations`;
+            }
+            else {
+                r.textContent = 'NaN';
+                l.textContent = '';
+                l.href = '';
+            }
+        }
+    }
+
+    get_pixiv_id(href_or_id) {
+        const twitter_id = href_or_id.includes('http') ? href_or_id.toLowerCase().split('/')[3] : href_or_id.toLowerCase();
+        return GM_getValue('pixiv_id', {})[twitter_id];
+    }
+
+    parsing_node(node) {
+        if (node.tagName == 'IMG') {
+            // this.add_to_media_tab_download_button(node);
+            this.add_to_article_time(node);
+            this.add_to_article_pixiv(node);
+            this.add_to_user_page_pixiv_input(node);
+        }
+
+        // this.detect_node(node);
     }
 
     observer_document() {
@@ -426,12 +538,11 @@ class TwitterMediaDownloader {
         observer.observe(document, { attributes: false, childList: true, subtree: true });
     }
 
-    main() {
-    }
-
     // ---------------------------------------------------------------------
 
     detect_node(node) {
+        // document.querySelector('article img[src*="video"]')
+
         try {
             if (node.dataset?.testid == 'cellInnerDiv' || node?.ariaLabel == "語音貼文" || node?.ariaLabel == "嵌入的影片") {
                 const article = node.querySelector('article[data-testid="tweet"]:has(a[href*="photo"])') || node.closest('article');
