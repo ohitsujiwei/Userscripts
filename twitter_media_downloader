@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.4
+// @version     3.1.5
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -33,7 +33,7 @@ const filename = '{user-id}-{status-id}';
 
 const xhr_keywords = {
     api: [
-        'HomeTimeline',
+        'UserTweets',
         'device_follow.json',
         'TweetDetail',
         'UserMedia',
@@ -46,6 +46,7 @@ let data_items_article = [];
 async function get_tweet_response_data(response) {
     const json = JSON.parse(response.responseText);
     const api = response.responseURL.split('?').shift().split('/').pop();
+    console.debug(response);
     // console.debug(api);
     // console.debug(json);
     switch (api) {
@@ -463,15 +464,17 @@ this.selector.download_button_photo
 
         if (article.querySelector(`.${this.selector.download_button_common}`)) return;
 
-        if (!article.querySelector('a[href*="/photo/"], [aria-label*="語音貼文"], [aria-label*="嵌入的影片"]')) return;
+        const media = article.querySelector('a[href*="/photo/"], [aria-label*="語音貼文"], [aria-label*="嵌入的影片"]');
+        if (!media) return;
 
         const time = Array.from(article.querySelectorAll('time')).pop();
         const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
         if (!status_id) return;
 
-        const image = article.querySelector('a[href*="/photo/"]');
-        const image_status_id = image ? image.href.split('/status/').pop().split('/').shift() : null;
-        if (image_status_id != status_id) return;
+        if (media.tagName == 'A') {
+            const image_status_id = media.href.split('/status/').pop().split('/').shift();
+            if (image_status_id != status_id) return;
+        }
 
         const button_group = article.querySelector('div[role="group"]');
         const button_download = button_group.lastChild.cloneNode(true);
