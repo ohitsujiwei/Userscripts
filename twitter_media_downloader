@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.5
+// @version     3.1.6
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
 // @grant       GM_setValue
 // @grant       GM_getValue
 // @grant       GM_download
+// @grant       GM_addStyle
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitter.com
 // @run-at      document-start
 // ==/UserScript==
@@ -28,6 +29,12 @@
 // - 'UserMedia'                    for https://x.com/*/media               (2025/05/13)
 // - 'TweetDetail'                  for https://x.com/*/status/*            (2025/05/13)
 // - 'device_follow.json'           for https://x.com/i/timeline            (2025/05/13)
+
+GM_addStyle(`
+
+.r-1867qdf {
+    border-radius: unset !important;
+`)
 
 const filename = '{user-id}-{status-id}';
 
@@ -444,8 +451,6 @@ this.selector.download_button_photo
     }
 
     async add_to_media_tab_download_button(node) {
-        if (!node.src.includes('/media/')) return;
-
         const li = node.closest(`li[role="listitem"][id*="verticalGridItem"]:not(:has(.${this.selector.download_button_media_tab}))`);
         if (!li) return;
 
