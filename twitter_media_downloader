@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.6
+// @version     3.1.7
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -26,9 +26,10 @@
 // - 'CommunitiesExploreTimeline'   for https://x.com/i/bookmarks
 //
 // Done:
-// - 'UserMedia'                    for https://x.com/*/media               (2025/05/13)
-// - 'TweetDetail'                  for https://x.com/*/status/*            (2025/05/13)
-// - 'device_follow.json'           for https://x.com/i/timeline            (2025/05/13)
+// - 'UserTweets'           for https://x.com/{user}        (2025/05/18)
+// - 'device_follow.json'   for https://x.com/i/timeline    (2025/05/13)
+// - 'TweetDetail'          for https://x.com/*/status/*    (2025/05/13)
+// - 'UserMedia'            for https://x.com/*/media       (2025/05/13)
 
 GM_addStyle(`
 
@@ -53,10 +54,22 @@ let data_items_article = [];
 async function get_tweet_response_data(response) {
     const json = JSON.parse(response.responseText);
     const api = response.responseURL.split('?').shift().split('/').pop();
-    console.debug(response);
+    // console.debug(response);
     // console.debug(api);
     // console.debug(json);
     switch (api) {
+        case 'UserTweets': {
+            json.data.user.result.timeline.timeline.instructions.forEach((instruction) => {
+                if (instruction.type === 'TimelinePinEntry') {
+                    data_items_article.push(instruction.entry.content.itemContent.tweet_results.result);
+                }
+                else if (instruction.type === 'TimelineAddEntries') {
+                    const entries = instruction.entries.filter(e => e.entryId.includes('tweet-'));
+                    data_items_article.concat(entries.map(e => e.content.itemContent.tweet_results.result));
+                }
+            });
+            break;
+        }
         case 'device_follow.json': {
             Object.entries(json.globalObjects.tweets).forEach(([key, value]) => {
                 data_items_article.push({
