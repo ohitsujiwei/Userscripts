@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.7
+// @version     3.1.8
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -56,7 +56,7 @@ async function get_tweet_response_data(response) {
     const api = response.responseURL.split('?').shift().split('/').pop();
     // console.debug(response);
     // console.debug(api);
-    // console.debug(json);
+    console.debug(json);
     switch (api) {
         case 'UserTweets': {
             json.data.user.result.timeline.timeline.instructions.forEach((instruction) => {
@@ -83,7 +83,8 @@ async function get_tweet_response_data(response) {
         case 'TweetDetail': {
             json.data.threaded_conversation_with_injections_v2.instructions.find(e => e.type === "TimelineAddEntries").entries.forEach((entry) => {
                 if (entry.entryId.includes('tweet-')) {
-                    data_items_article.push(entry.content.itemContent.tweet_results.result);
+                    // '1924090576238260657' -> entry.content.itemContent.tweet_results.result.tweet
+                    data_items_article.push(entry.content.itemContent.tweet_results.result.tweet || entry.content.itemContent.tweet_results.result);
                 }
                 else if (entry.entryId.includes('conversationthread-')) {
                     entry.content.items.forEach((item) => {
@@ -108,6 +109,8 @@ async function get_tweet_response_data(response) {
             break;
         }
     }
+    console.debug('data_items_article', data_items_article);
+    console.debug('data_items_li', data_items_li);
 }
 
 (function override_xhr_send() {
@@ -304,6 +307,10 @@ this.selector.download_button_photo
     }
 
     onclick_download_button(button, status_id, index, data) {
+        // console.debug(button);
+        // console.debug(status_id);
+        // console.debug(index);
+        // console.debug(data);
         if (!data) {
             this.update_download_button(button, this.download_button_status.failed);
             return;
