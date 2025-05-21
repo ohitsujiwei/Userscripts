@@ -3,13 +3,13 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.11
+// @version     1.0.12
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
 // ==/UserScript==
 
-'use strict'
+'use strict';
 
 let global_span = null;
 function print(string) {
@@ -221,7 +221,7 @@ async function player_settings_process(objects) {
             options.forEach((submenu, index) => {
                 if (index != 1 && index != options.length - 1) return;
                 const input = submenu.querySelector('input');
-                const label = submenu.querySelector('label').textContent.split(' ')[0];
+                const label = submenu.querySelector('label').textContent.split(' ')[0].split('(')[0];
                 const button = add_button(control, 'button-on-video', 'quality', label, async () => {
                     await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
                     await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
