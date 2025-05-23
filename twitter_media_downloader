@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.10
+// @version     3.1.11
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -16,8 +16,6 @@
 'use strict';
 
 // TODO: (Lazy to do.)
-// - 'HomeTimeline'                 for https://x.com/home with recommend
-// - 'HomeLatestTimeline'           for https://x.com/home with following
 // - 'ListLatestTweetsTimeline'     for https://x.com/home with list
 //                                  and https://x.com/i/lists/*
 // - 'Bookmarks'                    for https://x.com/i/bookmarks
@@ -26,6 +24,8 @@
 // - 'CommunitiesExploreTimeline'   for https://x.com/i/bookmarks
 //
 // Done:
+// - 'HomeLatestTimeline'   for https://x.com/home          (2025/05/24) (following)
+// - 'HomeTimeline'         for https://x.com/home          (2025/05/24) (recommend)
 // - 'UserTweets'           for https://x.com/{user}        (2025/05/18)
 // - 'device_follow.json'   for https://x.com/i/timeline    (2025/05/13)
 // - 'TweetDetail'          for https://x.com/*/status/*    (2025/05/13)
@@ -42,6 +42,7 @@ const filename = '{user-id}-{status-id}';
 
 const xhr_keywords = {
     api: [
+        'HomeLatestTimeline',
         'HomeTimeline',
         'UserTweets',
         'device_follow.json',
@@ -60,10 +61,23 @@ function get_tweet_response_data(response) {
     console.debug(api);
     console.debug(json);
     switch (api) {
+        case 'HomeLatestTimeline': {
+            console.debug('-----', json);
+            json.data.home.home_timeline_urt.instructions.forEach((instruction) => {
+                if (instruction.type === 'TimelineAddEntries') {
+                    const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
+                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy.retweeted_status_result?.result).filter(e => e);
+                    data_items_article = data_items_article.concat(tweets, retweets);
+                }
+            });
+            break;
+        }
         case 'HomeTimeline': {
             json.data.home.home_timeline_urt.instructions.forEach((instruction) => {
                 if (instruction.type === 'TimelineAddEntries') {
-                    data_items_article = data_items_article.concat(instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e));
+                    const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
+                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy.retweeted_status_result?.result).filter(e => e);
+                    data_items_article = data_items_article.concat(tweets, retweets);
                 }
             });
             break;
@@ -85,7 +99,10 @@ function get_tweet_response_data(response) {
                 data_items_article.push({
                     rest_id: key,
                     legacy: value,
-                    core: { user_results: { result: { legacy: json.globalObjects.users[value.user_id_str], }, }, },
+                    core: { user_results: { result: { core: {
+                        name: json.globalObjects.users[value.user_id_str].name,
+                        screen_name: json.globalObjects.users[value.user_id_str].screen_name,
+                    }, }, }, },
                 });
             });
             break;
