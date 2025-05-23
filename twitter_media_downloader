@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.8
+// @version     3.1.9
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -324,8 +324,8 @@ this.selector.download_button_photo
         const tweet = data.legacy;
         const datetime = out.match(/{date-time(-local)?:[^{}]+}/) ? out.match(/{date-time(?:-local)?:([^{}]+)}/)[1].replace(/[\\/|<>*?:"]/g, v => this.invalid_chars[v]) : 'YYYYMMDD-hhmmss';
         const info = {};
-        info['user-name'] = data.core.user_results.result.legacy.name.replace(/([\\/|*?:"]|[\u200b-\u200d\u2060\ufeff]|🔞)/g, v => this.invalid_chars[v]);
-        info['user-id'] = data.core.user_results.result.legacy.screen_name;
+        info['user-name'] = data.core.user_results.result.core.name.replace(/([\\/|*?:"]|[\u200b-\u200d\u2060\ufeff]|🔞)/g, v => this.invalid_chars[v]);
+        info['user-id'] = data.core.user_results.result.core.screen_name;
         info['status-id'] = status_id;
         info['date-time'] = this.format_date(tweet.created_at, datetime);
         info['date-time-local'] = this.format_date(tweet.created_at, datetime, true);
@@ -450,7 +450,7 @@ this.selector.download_button_photo
         };
     }
 
-    async add_to_article_photo_download_button(node) {
+    add_to_article_photo_download_button(node) {
         if (!node.src.includes('/media/')) return;
 
         if (!node.closest('article')) return;
@@ -470,7 +470,7 @@ this.selector.download_button_photo
         }
     }
 
-    async add_to_media_tab_download_button(node) {
+    add_to_media_tab_download_button(node) {
         const li = node.closest(`li[role="listitem"][id*="verticalGridItem"]:not(:has(.${this.selector.download_button_media_tab}))`);
         if (!li) return;
 
@@ -483,7 +483,7 @@ this.selector.download_button_photo
         li.appendChild(button);
     }
 
-    async add_to_article_download_button(node) {
+    add_to_article_download_button(node) {
         const article = node.closest('article');
         if (!article) return;
 
@@ -511,7 +511,7 @@ this.selector.download_button_photo
         button_download.onclick = () => this.onclick_download_button(button_download, status_id, null, data_items_article.find(e => e.rest_id === status_id));
     }
 
-    async add_to_article_time(node) {
+    add_to_article_time(node) {
         if (!node.src.includes('/profile_images/')) return;
 
         const article = node.closest('article:has(time)');
@@ -532,7 +532,7 @@ this.selector.download_button_photo
         });
     }
 
-    async add_to_article_pixiv(node) {
+    add_to_article_pixiv(node) {
         if (!node.src.includes('/media/')) return;
 
         const article = node.closest('article:has(time)');
@@ -558,7 +558,7 @@ this.selector.download_button_photo
         }
     }
 
-    async add_to_user_page_pixiv_input(node) {
+    add_to_user_page_pixiv_input(node) {
         if (!node.src.includes('/profile_images/') || !node?.alt.includes('開啟個人資料相片')) return;
 
         const user_avatar_container = node.closest('div[data-testid*="UserAvatar-Container"]');
