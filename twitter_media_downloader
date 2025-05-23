@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.11
+// @version     3.1.12
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -21,7 +21,7 @@
 // - 'Bookmarks'                    for https://x.com/i/bookmarks
 //
 // Not necessary:
-// - 'CommunitiesExploreTimeline'   for https://x.com/i/bookmarks
+// - 'CommunitiesExploreTimeline'   for https://x.com/{user}/communities/explore
 //
 // Done:
 // - 'HomeLatestTimeline'   for https://x.com/home          (2025/05/24) (following)
@@ -40,16 +40,14 @@ GM_addStyle(`
 
 const filename = '{user-id}-{status-id}';
 
-const xhr_keywords = {
-    api: [
-        'HomeLatestTimeline',
-        'HomeTimeline',
-        'UserTweets',
-        'device_follow.json',
-        'TweetDetail',
-        'UserMedia',
-    ]
-}
+const xhr_api_keywords = [
+    'HomeLatestTimeline',
+    'HomeTimeline',
+    'UserTweets',
+    'device_follow.json',
+    'TweetDetail',
+    'UserMedia',
+]
 
 let data_items_li = [];
 let data_items_article = [];
@@ -144,7 +142,7 @@ function get_tweet_response_data(response) {
     const original_send = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function(body) {
         this.addEventListener('readystatechange', () => {
-            if (this.readyState === 4 && xhr_keywords.api.some(e => this.responseURL.includes(e))) {
+            if (this.readyState === 4 && xhr_api_keywords.some(e => this.responseURL.includes(e))) {
                 get_tweet_response_data(this);
             }
         });
