@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.9
+// @version     3.1.10
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -33,6 +33,7 @@
 
 GM_addStyle(`
 
+/* img radius */
 .r-1867qdf {
     border-radius: unset !important;
 `)
@@ -41,6 +42,7 @@ const filename = '{user-id}-{status-id}';
 
 const xhr_keywords = {
     api: [
+        'HomeTimeline',
         'UserTweets',
         'device_follow.json',
         'TweetDetail',
@@ -51,13 +53,21 @@ const xhr_keywords = {
 let data_items_li = [];
 let data_items_article = [];
 
-async function get_tweet_response_data(response) {
+function get_tweet_response_data(response) {
     const json = JSON.parse(response.responseText);
     const api = response.responseURL.split('?').shift().split('/').pop();
-    // console.debug(response);
-    // console.debug(api);
+    console.debug(response);
+    console.debug(api);
     console.debug(json);
     switch (api) {
+        case 'HomeTimeline': {
+            json.data.home.home_timeline_urt.instructions.forEach((instruction) => {
+                if (instruction.type === 'TimelineAddEntries') {
+                    data_items_article = data_items_article.concat(instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e));
+                }
+            });
+            break;
+        }
         case 'UserTweets': {
             json.data.user.result.timeline.timeline.instructions.forEach((instruction) => {
                 if (instruction.type === 'TimelinePinEntry') {
@@ -65,7 +75,7 @@ async function get_tweet_response_data(response) {
                 }
                 else if (instruction.type === 'TimelineAddEntries') {
                     const entries = instruction.entries.filter(e => e.entryId.includes('tweet-'));
-                    data_items_article.concat(entries.map(e => e.content.itemContent.tweet_results.result));
+                    data_items_article = data_items_article.concat(entries.map(e => e.content.itemContent.tweet_results.result));
                 }
             });
             break;
