@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.1.12
+// @version     3.2.0
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -86,8 +86,9 @@ function get_tweet_response_data(response) {
                     data_items_article.push(instruction.entry.content.itemContent.tweet_results.result);
                 }
                 else if (instruction.type === 'TimelineAddEntries') {
-                    const entries = instruction.entries.filter(e => e.entryId.includes('tweet-'));
-                    data_items_article = data_items_article.concat(entries.map(e => e.content.itemContent.tweet_results.result));
+                    const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
+                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy.retweeted_status_result?.result).filter(e => e);
+                    data_items_article = data_items_article.concat(tweets, retweets);
                 }
             });
             break;
@@ -634,6 +635,165 @@ this.selector.download_button_photo
         return GM_getValue('pixiv_id', {})[twitter_id];
     }
 
+    open_image_in_media_viewer(node) {
+        if (!node.src.includes('/media/')) return;
+        // console.debug(node);
+
+        const photo = node.closest('a[href*="/photo/"]');
+        if (!photo) return;
+
+        const [status_id, index] = photo.href.split('/status/').pop().split('/photo/');
+        if (!status_id) return;
+
+        const json = data_items_li.find(e => e.rest_id === status_id) || data_items_article.find(e => e.rest_id === status_id || e.id_str === status_id);
+        if (!json) return;
+        // console.debug(json);
+
+        const media = json.legacy.extended_entities.media || json.legacy.entities.media;
+        if (!media) return;
+        // console.debug(media);
+
+        const photos = media.filter(e => e.type === 'photo').map(e => `${e.media_url_https}:orig`);
+        if (!photos) return;
+        // console.debug(photos);
+
+        const info = {
+            'user': {
+                'id': json.core.user_results.result.core.screen_name,
+                'name': json.core.user_results.result.core.name,
+            },
+            'status_id': status_id,
+            'media': photos,
+        }
+
+        node.onclick = (e) => {
+            e.preventDefault();
+            this.create_media_viewer();
+            this.add_image_to_media_viewer(info, index);
+            this.open_media_viewer();
+        }
+    }
+
+    create_media_viewer() {
+        let renderer = document.querySelector('.media_viewer_renderer');
+        if (renderer) return;
+
+        renderer = document.createElement('div');
+        document.body.appendChild(renderer);
+        renderer.classList.add('media_viewer_renderer');
+        renderer.style = `display: flex; position: fixed; inset: 0px; z-index: 10000; background: rgba(0, 0, 0, 0.8); flex-direction: column;`;
+
+        const header = document.createElement('div');
+        renderer.appendChild(header);
+        header.classList.add('media_viewer_header');
+        header.style = `display: flex; background: rgb(27, 40, 54); width: 100%; justify-content: space-between;`;
+
+        const span_style = document.createElement('span');
+        header.appendChild(span_style);
+        span_style.classList.add('media_viewer_header_span_style');
+        span_style.style = `color: #FFFFFF; padding: 0px 4px; cursor: pointer;`;
+        span_style.textContent = 'Style: fit-height';
+        span_style.onclick = () => {
+            if (span_style.textContent.includes('fit-height')) {
+                renderer.querySelectorAll('.media_viewer_image').forEach((img) => {
+                    img.style.height = 'auto';
+                    img.style.width = '-webkit-fill-available';
+                });
+                span_style.textContent = 'Style: fit-width';
+            }
+            else if (span_style.textContent.includes('fit-width')) {
+                renderer.querySelectorAll('.media_viewer_image').forEach((img) => {
+                    img.style.height = '-webkit-fill-available';
+                    img.style.width = 'auto';
+                });
+                span_style.textContent = 'Style: fit-height';
+            }
+        };
+
+        const span_index = document.createElement('span');
+        header.appendChild(span_index);
+        span_index.classList.add('media_viewer_header_span_index');
+        span_index.style = `color: #FFFFFF; padding: 0px 4px;`;
+        span_index.textContent = '0 / 0';
+
+        const span_close = document.createElement('span');
+        header.appendChild(span_close);
+        span_close.classList.add('media_viewer_header_span_close');
+        span_close.style = `color: #FFFFFF; padding: 0px 4px; cursor: pointer;`;
+        span_close.textContent = 'Close [Esc]';
+        span_close.onclick = () => this.close_media_viewer();
+
+        const image_container = document.createElement('div');
+        renderer.appendChild(image_container);
+        image_container.classList.add('media_viewer_image_container');
+        image_container.style = `display: flex; flex-direction: column; align-items: center; overflow: hidden auto; width: 100%;`;
+        image_container.onclick = (e) => {
+            if (e.target === image_container) {
+                this.close_media_viewer();
+            }
+        }
+
+        for (let i = 0; i < 4; i++) {
+            const img = document.createElement('img');
+            image_container.appendChild(img);
+            img.classList.add('media_viewer_image');
+            img.setAttribute('draggable', false);
+            img.style = `cursor: pointer; margin: 4px 0px; height: -webkit-fill-available`;
+        }
+
+        document.body.addEventListener("keydown", (e) => {
+            switch (e.keyCode) {
+                case 27: {
+                    this.close_media_viewer();
+                    break;
+                }
+            }
+        });
+    }
+
+    close_media_viewer() {
+        const renderer = document.querySelector('.media_viewer_renderer');
+        if (!renderer) return;
+        renderer.style.inset = 'unset';
+    }
+
+    open_media_viewer() {
+        const renderer = document.querySelector('.media_viewer_renderer');
+        if (!renderer) return;
+        renderer.style.inset = '0px';
+    }
+
+    add_image_to_media_viewer(info, current_index) {
+        const renderer = document.querySelector('.media_viewer_renderer');
+
+        const span_index = renderer.querySelector('.media_viewer_header_span_index');
+        span_index.textContent = `${current_index} / ${info.media.length}`;
+
+        const image_container = renderer.querySelector('.media_viewer_image_container');
+
+        let image_top_offset = 0;
+
+        renderer.querySelectorAll('.media_viewer_image').forEach((img, index) => {
+            if (index == 0) {
+                image_top_offset = img.offsetTop;
+            }
+
+            img.src = info.media[index] || '';
+            img.onclick = (e) => {
+                span_index.textContent = `${index + 1} / ${info.media.length}`;
+                image_container.scroll({ top: img.offsetTop - image_top_offset});
+            }
+            img.onmouseover = (e) => {
+                span_index.textContent = `${index + 1} / ${info.media.length}`;
+            }
+
+            if (index + 1 == Number(current_index)) {
+                img.click();
+            }
+        });
+
+    }
+
     parsing_node(node) {
         if (node.tagName == 'IMG') {
             this.add_to_article_photo_download_button(node);
@@ -641,6 +801,7 @@ this.selector.download_button_photo
             this.add_to_article_time(node);
             this.add_to_article_pixiv(node);
             this.add_to_user_page_pixiv_input(node);
+            this.open_image_in_media_viewer(node);
         }
         else if (node.tagName == 'DIV') {
             this.add_to_article_download_button(node);
