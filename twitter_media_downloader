@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.0
+// @version     3.2.1
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -669,14 +669,16 @@ this.selector.download_button_photo
         node.onclick = (e) => {
             e.preventDefault();
             this.create_media_viewer();
-            this.add_image_to_media_viewer(info, index);
-            this.open_media_viewer();
+            this.add_image_to_media_viewer(info);
         }
     }
 
     create_media_viewer() {
         let renderer = document.querySelector('.media_viewer_renderer');
-        if (renderer) return;
+        if (renderer) {
+            this.open_media_viewer();
+            return;
+        }
 
         renderer = document.createElement('div');
         document.body.appendChild(renderer);
@@ -726,7 +728,7 @@ this.selector.download_button_photo
         const image_container = document.createElement('div');
         renderer.appendChild(image_container);
         image_container.classList.add('media_viewer_image_container');
-        image_container.style = `display: flex; flex-direction: column; align-items: center; overflow: hidden auto; width: 100%;`;
+        image_container.style = `display: flex; flex-direction: column; align-items: center; overflow: hidden auto; width: 100%; height: 100%`;
         image_container.onclick = (e) => {
             if (e.target === image_container) {
                 this.close_media_viewer();
@@ -763,14 +765,10 @@ this.selector.download_button_photo
         renderer.style.inset = '0px';
     }
 
-    add_image_to_media_viewer(info, current_index) {
+    add_image_to_media_viewer(info) {
         const renderer = document.querySelector('.media_viewer_renderer');
-
         const span_index = renderer.querySelector('.media_viewer_header_span_index');
-        span_index.textContent = `${current_index} / ${info.media.length}`;
-
         const image_container = renderer.querySelector('.media_viewer_image_container');
-
         let image_top_offset = 0;
 
         renderer.querySelectorAll('.media_viewer_image').forEach((img, index) => {
@@ -780,18 +778,13 @@ this.selector.download_button_photo
 
             img.src = info.media[index] || '';
             img.onclick = (e) => {
-                span_index.textContent = `${index + 1} / ${info.media.length}`;
+                span_index.textContent = `${index + 1} / ${info.media.length} (${img.naturalWidth}x${img.naturalHeight})`;
                 image_container.scroll({ top: img.offsetTop - image_top_offset});
             }
             img.onmouseover = (e) => {
-                span_index.textContent = `${index + 1} / ${info.media.length}`;
-            }
-
-            if (index + 1 == Number(current_index)) {
-                img.click();
+                span_index.textContent = `${index + 1} / ${info.media.length} (${img.naturalWidth}x${img.naturalHeight})`;
             }
         });
-
     }
 
     parsing_node(node) {
