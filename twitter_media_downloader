@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.1
+// @version     3.2.2
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -74,7 +74,7 @@ function get_tweet_response_data(response) {
             json.data.home.home_timeline_urt.instructions.forEach((instruction) => {
                 if (instruction.type === 'TimelineAddEntries') {
                     const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
-                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy.retweeted_status_result?.result).filter(e => e);
+                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy?.retweeted_status_result?.result).filter(e => e);
                     data_items_article = data_items_article.concat(tweets, retweets);
                 }
             });
