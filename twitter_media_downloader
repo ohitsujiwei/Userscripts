@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.2
+// @version     3.2.3
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -558,6 +558,26 @@ this.selector.download_button_photo
         });
     }
 
+    add_to_article_retweet_time(node) {
+        if (!node.src.includes('/profile_images/')) return;
+
+        const article = node.closest('article');
+        if (!article) return;
+
+        const retweet_span = article.querySelector('span[data-testid="socialContext"]');
+        if (!retweet_span) return;
+
+        const time = Array.from(article.querySelectorAll('time')).pop();
+        const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
+        if (!status_id) return;
+
+        const retweet_data = data_items_article.find(e => e.legacy?.retweeted_status_id_str === status_id);
+        if (!retweet_data) return;
+
+        const retweet_time = new Date(retweet_data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
+        retweet_span.textContent = `${retweet_span.textContent} (${retweet_time})`;
+    }
+
     add_to_article_pixiv(node) {
         if (!node.src.includes('/media/')) return;
 
@@ -792,6 +812,7 @@ this.selector.download_button_photo
             this.add_to_article_photo_download_button(node);
             this.add_to_media_tab_download_button(node);
             this.add_to_article_time(node);
+            this.add_to_article_retweet_time(node);
             this.add_to_article_pixiv(node);
             this.add_to_user_page_pixiv_input(node);
             this.open_image_in_media_viewer(node);
