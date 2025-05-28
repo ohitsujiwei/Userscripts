@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.4
+// @version     3.2.5
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -41,6 +41,7 @@ GM_addStyle(`
 const filename = '{user-id}-{status-id}';
 
 const xhr_api_keywords = [
+    'UserByScreenName',
     'HomeLatestTimeline',
     'HomeTimeline',
     'UserTweets',
@@ -51,6 +52,7 @@ const xhr_api_keywords = [
 
 let data_items_li = [];
 let data_items_article = [];
+let data_user_by_screen_name = [];
 
 function get_tweet_response_data(response) {
     const json = JSON.parse(response.responseText);
@@ -59,8 +61,11 @@ function get_tweet_response_data(response) {
     console.debug(api);
     console.debug(json);
     switch (api) {
+        case 'UserByScreenName': {
+            data_user_by_screen_name.push(json.data.user.result);
+            break;
+        }
         case 'HomeLatestTimeline': {
-            console.debug('-----', json);
             json.data.home.home_timeline_urt.instructions.forEach((instruction) => {
                 if (instruction.type === 'TimelineAddEntries') {
                     const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
@@ -808,6 +813,27 @@ this.selector.download_button_photo
         });
     }
 
+    add_to_profile_join_time(node) {
+        const timeline = node.parentElement;
+        const profile = timeline.querySelector('div:has(a[href*="/header_photo"]');
+        if (!profile) return;
+
+        const user_name = profile.querySelector('div[data-testid="UserName"]');
+        if (!user_name) return;
+
+        const screen_name = Array.from(user_name.querySelectorAll('span')).filter(e => e.textContent.includes('@')).map(e => e.textContent.replace('@', '')).pop();
+        if (!screen_name) return;
+
+        const data = data_user_by_screen_name.find(e => e.core.screen_name.includes(screen_name));
+        if (!data) return;
+
+        const user_join_date = profile.querySelector('span[data-testid="UserJoinDate"]');
+        if (!user_join_date) return;
+
+        const join_time = new Date(data.core.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
+        user_join_date.lastChild.textContent = `${user_join_date.textContent} (${join_time})`;
+    }
+
     parsing_node(node) {
         if (node.tagName == 'IMG') {
             this.add_to_article_photo_download_button(node);
@@ -820,6 +846,9 @@ this.selector.download_button_photo
         }
         else if (node.tagName == 'DIV') {
             this.add_to_article_download_button(node);
+        }
+        else if (node.tagName == 'SECTION') {
+            this.add_to_profile_join_time(node);
         }
     }
 
