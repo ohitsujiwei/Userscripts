@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.3
+// @version     3.2.4
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -564,10 +564,10 @@ this.selector.download_button_photo
         const article = node.closest('article');
         if (!article) return;
 
-        const retweet_span = article.querySelector('span[data-testid="socialContext"]');
+        const retweet_span = article.querySelector('span[data-testid="socialContext"]:not([added-retweet-time])');
         if (!retweet_span) return;
 
-        const time = Array.from(article.querySelectorAll('time')).pop();
+        const time = article.querySelector('time');
         const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
         if (!status_id) return;
 
@@ -575,7 +575,8 @@ this.selector.download_button_photo
         if (!retweet_data) return;
 
         const retweet_time = new Date(retweet_data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
-        retweet_span.textContent = `${retweet_span.textContent} (${retweet_time})`;
+        retweet_span.lastChild.textContent = `${retweet_span.lastChild.textContent} (${retweet_time})`;
+        retweet_span.setAttribute('added-retweet-time', '');
     }
 
     add_to_article_pixiv(node) {
