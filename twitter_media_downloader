@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.6
+// @version     3.2.7
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -575,7 +575,7 @@ class TwitterMediaDownloader {
         const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
         if (!status_id) return;
 
-        const retweet_data = data_items_article.find(e => e.legacy?.retweeted_status_id_str === status_id);
+        const retweet_data = data_items_article.find(e => e.legacy?.retweeted_status_id_str === status_id || e.legacy?.retweeted_status_result?.result?.rest_id === status_id);
         if (!retweet_data) return;
 
         const retweet_time = new Date(retweet_data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
