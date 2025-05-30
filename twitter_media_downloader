@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.7
+// @version     3.2.8
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -99,6 +99,7 @@ function get_tweet_response_data(response) {
             break;
         }
         case 'device_follow.json': {
+            if (!json.globalObjects.tweets) return;
             Object.entries(json.globalObjects.tweets).forEach(([key, value]) => {
                 data_items_article.push({
                     rest_id: key,
@@ -518,7 +519,7 @@ class TwitterMediaDownloader {
         if (!article) return;
 
         const button_group = article.querySelector('div[role="group"]');
-        if (button_group.querySelector(`.${this.selector.download_button_common}`)) return;
+        if (!button_group || button_group.querySelector(`.${this.selector.download_button_common}`)) return;
 
         const media = article.querySelector('a[href*="/photo/"], [aria-label*="語音貼文"], [aria-label*="嵌入的影片"]');
         if (!media) return;
@@ -592,21 +593,26 @@ class TwitterMediaDownloader {
         const time = article.querySelector('time:not([pixiv-added])');
         if (!time) return;
 
-        if (article.querySelector('img[src*="/media/"]')) {
-            const a = time.closest('a');
-            if (!a) return;
-            const pixiv_id = this.get_pixiv_id(a.href);
-            if (pixiv_id) {
-                const parent = a?.parentElement.parentElement;
-                if (parent) {
-                    time.setAttribute('pixiv-added', '');
-                    parent.appendChild(parent.childNodes[1].cloneNode(true));
-                    const pixiv_element = document.createElement('a');
-                    parent.appendChild(pixiv_element);
-                    pixiv_element.innerHTML = `<a id="pixiv-tweet-link" href="https://www.pixiv.net/users/${pixiv_id}/illustrations" target="_blank" style="font-family: Segoe UI; color: #1D9BF0; text-decoration: underline;">Pixiv</a>`;
-                }
-            }
-        }
+        if (article.querySelector('img[src*="/media/"]')) return;
+
+        const a = time.closest('a');
+        if (!a) return;
+
+        const pixiv_id = this.get_pixiv_id(a.href);
+        if (!pixiv_id) return;
+
+        const user_name = a.closest('div[data-testid="User-Name"]');
+        if (!user_name) return;
+
+        const dot = user_name.querySelector('div[dir="ltr"][aria-hidden="true"]')
+        if (!dot) return;
+
+        const parent = dot.parentElement;
+        time.setAttribute('pixiv-added', '');
+        parent.appendChild(dot.cloneNode(true));
+        const pixiv_element = document.createElement('a');
+        parent.appendChild(pixiv_element);
+        pixiv_element.innerHTML = `<a id="pixiv-tweet-link" href="https://www.pixiv.net/users/${pixiv_id}/illustrations" target="_blank" style="font-family: Segoe UI; color: #1D9BF0; text-decoration: underline;">Pixiv</a>`;
     }
 
     add_to_user_page_pixiv_input(node) {
