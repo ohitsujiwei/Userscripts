@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.11
+// @version     3.2.12
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -545,24 +545,33 @@ class TwitterMediaDownloader {
         button_download.onclick = () => this.onclick_download_button(button_download, status_id, null, data_items_article.find(e => e.rest_id === status_id));
     }
 
+    update_time_textContent(time) {
+        if (time.textContent.includes(':') && time.textContent.includes('/')) return;
+
+        const date = new Date(time.dateTime);
+        if (isNaN(date)) return;
+
+        if (time.textContent.includes(this.time_split)) {
+            time.textContent = [new Date(time.dateTime).toLocaleTimeString(), ...time.textContent.split(' ').slice(1, 3)].join(' ');
+        }
+        else {
+            time.textContent = `${time.textContent} ${this.time_split} ${new Date(time.dateTime).toLocaleString('zh-tw', { hourCycle:'h24' })}`;
+        }
+    }
+
     add_to_article_time(node) {
         if (!node.src.includes('/profile_images/')) return;
 
         const article = node.closest('article:has(time)');
         if (!article) return;
 
-        article.querySelectorAll('time:not([time-added]').forEach((time) => {
-            const date = new Date(time.dateTime);
-            if (isNaN(date)) return;
+        article.querySelectorAll('time').forEach((time) => {
+            this.update_time_textContent(time);
 
-            time.setAttribute('time-added', '');
-            if (time.textContent.includes(this.time_split)) {
-                time.textContent = [new Date(time.dateTime).toLocaleTimeString(), ...time.textContent.split(' ').slice(1, 3)].join(' ');
-            }
-            else {
-                time.textContent = `${time.textContent} ${this.time_split} ${new Date(time.dateTime).toLocaleString('zh-tw', { hourCycle:'h24' })}`;
-            }
+            const a = time.closest('a');
+            if (!a) return;
 
+            new MutationObserver(() => { this.update_time_textContent(time); }).observe(a, { attributes: true, attributeFilter: ['aria-label'] });
         });
     }
 
@@ -590,13 +599,12 @@ class TwitterMediaDownloader {
     add_to_article_pixiv(node) {
         if (!node.src.includes('/media/')) return;
 
-        const article = node.closest('article:has(time)');
+        const article = node.closest('article');
         if (!article) return;
 
-        const time = article.querySelector('time:not([pixiv-added])');
+        const times = Array.from(article.querySelectorAll('time:not([pixiv-added])'));
+        const time = location.href.includes('status') ? times.pop() : times.shift();
         if (!time) return;
-
-        if (article.querySelector('img[src*="/media/"]')) return;
 
         const a = time.closest('a');
         if (!a) return;
@@ -604,18 +612,16 @@ class TwitterMediaDownloader {
         const pixiv_id = this.get_pixiv_id(a.href);
         if (!pixiv_id) return;
 
-        const user_name = a.closest('div[data-testid="User-Name"]');
-        if (!user_name) return;
+        const parent = a.closest('div:has(div[dir="ltr"][aria-hidden="true"])');
+        if (!parent);
 
-        const dot = user_name.querySelector('div[dir="ltr"][aria-hidden="true"]')
-        if (!dot) return;
-
-        const parent = dot.parentElement;
-        time.setAttribute('pixiv-added', '');
+        const dot = parent.querySelector('div[dir="ltr"][aria-hidden="true"]');
         parent.appendChild(dot.cloneNode(true));
+
         const pixiv_element = document.createElement('a');
         parent.appendChild(pixiv_element);
         pixiv_element.innerHTML = `<a id="pixiv-tweet-link" href="https://www.pixiv.net/users/${pixiv_id}/illustrations" target="_blank" style="font-family: Segoe UI; color: #1D9BF0; text-decoration: underline;">Pixiv</a>`;
+        time.setAttribute('pixiv-added', '');
     }
 
     add_to_user_page_pixiv_input(node) {
@@ -671,26 +677,20 @@ class TwitterMediaDownloader {
 
     open_image_in_media_viewer(node) {
         if (!node.src.includes('/media/')) return;
-        // console.debug(node);
 
         const photo = node.closest('a[href*="/photo/"]');
-        // console.debug(photo);
         if (!photo) return;
 
         const [status_id, index] = photo.href.split('/status/').pop().split('/photo/');
-        // console.debug(status_id);
         if (!status_id) return;
 
         const json = data_items_li.find(e => e.rest_id === status_id) || data_items_article.find(e => e.rest_id === status_id || e.id_str === status_id);
-        // console.debug(json);
         if (!json) return;
 
         const media = json.legacy.extended_entities.media || json.legacy.entities.media;
-        // console.debug(media);
         if (!media) return;
 
         const photos = media.filter(e => e.type === 'photo').map(e => `${e.media_url_https}:orig`);
-        // console.debug(photos);
         if (!photos) return;
 
         const info = {
