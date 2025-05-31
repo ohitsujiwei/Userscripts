@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.8
+// @version     3.2.9
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -524,7 +524,9 @@ class TwitterMediaDownloader {
         const media = article.querySelector('a[href*="/photo/"], [aria-label*="語音貼文"], [aria-label*="嵌入的影片"]');
         if (!media) return;
 
-        const time = Array.from(article.querySelectorAll('time')).pop();
+        const times = Array.from(article.querySelectorAll('time'));
+        const time = location.href.includes('status') ? times.pop() : times.shift();
+
         const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
         if (!status_id) return;
 
