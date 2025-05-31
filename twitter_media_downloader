@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.10
+// @version     3.2.11
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -93,7 +93,8 @@ function get_tweet_response_data(response) {
                 else if (instruction.type === 'TimelineAddEntries') {
                     const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
                     const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy.retweeted_status_result?.result).filter(e => e);
-                    data_items_article = data_items_article.concat(tweets, retweets);
+                    const conversations = instruction.entries.map(e => e.content.items).filter(e => e).flat().map(e => e.item?.itemContent.tweet_results?.result).filter(e => e);
+                    data_items_article = data_items_article.concat(tweets, retweets, conversations);
                 }
             });
             break;
@@ -673,22 +674,24 @@ class TwitterMediaDownloader {
         // console.debug(node);
 
         const photo = node.closest('a[href*="/photo/"]');
+        // console.debug(photo);
         if (!photo) return;
 
         const [status_id, index] = photo.href.split('/status/').pop().split('/photo/');
+        // console.debug(status_id);
         if (!status_id) return;
 
         const json = data_items_li.find(e => e.rest_id === status_id) || data_items_article.find(e => e.rest_id === status_id || e.id_str === status_id);
-        if (!json) return;
         // console.debug(json);
+        if (!json) return;
 
         const media = json.legacy.extended_entities.media || json.legacy.entities.media;
-        if (!media) return;
         // console.debug(media);
+        if (!media) return;
 
         const photos = media.filter(e => e.type === 'photo').map(e => `${e.media_url_https}:orig`);
-        if (!photos) return;
         // console.debug(photos);
+        if (!photos) return;
 
         const info = {
             'user': {
