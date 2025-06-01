@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.12
+// @version     3.2.13
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -602,7 +602,7 @@ class TwitterMediaDownloader {
         const article = node.closest('article');
         if (!article) return;
 
-        const times = Array.from(article.querySelectorAll('time:not([pixiv-added])'));
+        const times = Array.from(article.querySelectorAll('time'));
         const time = location.href.includes('status') ? times.pop() : times.shift();
         if (!time) return;
 
@@ -612,8 +612,8 @@ class TwitterMediaDownloader {
         const pixiv_id = this.get_pixiv_id(a.href);
         if (!pixiv_id) return;
 
-        const parent = a.closest('div:has(div[dir="ltr"][aria-hidden="true"])');
-        if (!parent);
+        const parent = a.closest('div:has(div[dir="ltr"][aria-hidden="true"]):not(:has(a#pixiv-tweet-link))');
+        if (!parent) return;
 
         const dot = parent.querySelector('div[dir="ltr"][aria-hidden="true"]');
         parent.appendChild(dot.cloneNode(true));
@@ -621,7 +621,6 @@ class TwitterMediaDownloader {
         const pixiv_element = document.createElement('a');
         parent.appendChild(pixiv_element);
         pixiv_element.innerHTML = `<a id="pixiv-tweet-link" href="https://www.pixiv.net/users/${pixiv_id}/illustrations" target="_blank" style="font-family: Segoe UI; color: #1D9BF0; text-decoration: underline;">Pixiv</a>`;
-        time.setAttribute('pixiv-added', '');
     }
 
     add_to_user_page_pixiv_input(node) {
@@ -726,27 +725,10 @@ class TwitterMediaDownloader {
         header.classList.add('media_viewer_header');
         header.style = `display: flex; background: rgb(27, 40, 54); width: 100%; justify-content: space-between;`;
 
+        // left this span to keep flex
         const span_style = document.createElement('span');
         header.appendChild(span_style);
         span_style.classList.add('media_viewer_header_span_style');
-        span_style.style = `color: #FFFFFF; padding: 0px 4px; cursor: pointer;`;
-        span_style.textContent = 'Style: fit-height';
-        span_style.onclick = () => {
-            if (span_style.textContent.includes('fit-height')) {
-                renderer.querySelectorAll('.media_viewer_image').forEach((img) => {
-                    img.style.height = 'auto';
-                    img.style.width = '-webkit-fill-available';
-                });
-                span_style.textContent = 'Style: fit-width';
-            }
-            else if (span_style.textContent.includes('fit-width')) {
-                renderer.querySelectorAll('.media_viewer_image').forEach((img) => {
-                    img.style.height = '-webkit-fill-available';
-                    img.style.width = 'auto';
-                });
-                span_style.textContent = 'Style: fit-height';
-            }
-        };
 
         const span_index = document.createElement('span');
         header.appendChild(span_index);
@@ -776,7 +758,7 @@ class TwitterMediaDownloader {
             image_container.appendChild(img);
             img.classList.add('media_viewer_image');
             img.setAttribute('draggable', false);
-            img.style = `cursor: pointer; margin: 4px 0px; height: -webkit-fill-available`;
+            img.style = `cursor: pointer; margin: 4px 0px; max-width: 99%; max-height: 99%;`;
         }
 
         document.body.addEventListener("keydown", (e) => {
