@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.2.13
+// @version     3.3.0
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -50,59 +50,45 @@ const xhr_api_keywords = [
     'UserMedia',
 ]
 
-let data_items_li = [];
-let data_items_article = [];
 let data_user_by_screen_name = [];
+const data_tweet = [];
+
+function deep_search(object, target_key, typename) {
+    const results = [];
+
+    function search(object, typename) {
+        if (!(object && typeof object === 'object')) return;
+        for (const key in object) {
+            if (key === target_key && object[key]?.__typename === typename) {
+                results.push(object[key]);
+            }
+            search(object[key], typename);
+        }
+    }
+
+    search(object, typename);
+
+    return results;
+}
 
 function get_tweet_response_data(response) {
     const json = JSON.parse(response.responseText);
     const api = response.responseURL.split('?').shift().split('/').pop();
+    console.debug('------------------------------');
     console.debug(response);
     console.debug(api);
     console.debug(json);
     switch (api) {
         case 'UserByScreenName': {
-            data_user_by_screen_name.push(json.data.user.result);
-            break;
-        }
-        case 'HomeLatestTimeline': {
-            json.data.home.home_timeline_urt.instructions.forEach((instruction) => {
-                if (instruction.type === 'TimelineAddEntries') {
-                    const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
-                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy.retweeted_status_result?.result).filter(e => e);
-                    data_items_article = data_items_article.concat(tweets, retweets);
-                }
-            });
-            break;
-        }
-        case 'HomeTimeline': {
-            json.data.home.home_timeline_urt.instructions.forEach((instruction) => {
-                if (instruction.type === 'TimelineAddEntries') {
-                    const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
-                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy?.retweeted_status_result?.result).filter(e => e);
-                    data_items_article = data_items_article.concat(tweets, retweets);
-                }
-            });
-            break;
-        }
-        case 'UserTweets': {
-            json.data.user.result.timeline.timeline.instructions.forEach((instruction) => {
-                if (instruction.type === 'TimelinePinEntry') {
-                    data_items_article.push(instruction.entry.content.itemContent.tweet_results.result);
-                }
-                else if (instruction.type === 'TimelineAddEntries') {
-                    const tweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result).filter(e => e);
-                    const retweets = instruction.entries.map(e => e.content.itemContent?.tweet_results.result.legacy.retweeted_status_result?.result).filter(e => e);
-                    const conversations = instruction.entries.map(e => e.content.items).filter(e => e).flat().map(e => e.item?.itemContent.tweet_results?.result).filter(e => e);
-                    data_items_article = data_items_article.concat(tweets, retweets, conversations);
-                }
-            });
+            const users = deep_search(json, 'result', 'User');
+            data_user_by_screen_name.push(...users);
+            console.debug('data_user_by_screen_name', data_user_by_screen_name);
             break;
         }
         case 'device_follow.json': {
             if (!json.globalObjects.tweets) return;
             Object.entries(json.globalObjects.tweets).forEach(([key, value]) => {
-                data_items_article.push({
+                data_tweet.push({
                     rest_id: key,
                     legacy: value,
                     core: { user_results: { result: { core: {
@@ -113,37 +99,18 @@ function get_tweet_response_data(response) {
             });
             break;
         }
-        case 'TweetDetail': {
-            json.data.threaded_conversation_with_injections_v2.instructions.find(e => e.type === "TimelineAddEntries").entries.forEach((entry) => {
-                if (entry.entryId.includes('tweet-')) {
-                    // '1924090576238260657' -> entry.content.itemContent.tweet_results.result.tweet
-                    data_items_article.push(entry.content.itemContent.tweet_results.result.tweet || entry.content.itemContent.tweet_results.result);
-                }
-                else if (entry.entryId.includes('conversationthread-')) {
-                    entry.content.items.forEach((item) => {
-                        if (item.entryId.includes('tweet-')) {
-                            data_items_article.push(item.item.itemContent.tweet_results.result);
-                        }
-                    });
-                }
-            });
-            break;
-        }
+        case 'HomeLatestTimeline':
+        case 'HomeTimeline':
+        case 'UserTweets':
+        case 'TweetDetail':
         case 'UserMedia': {
-            json.data.user.result.timeline.timeline.instructions.forEach((instruction) => {
-                if (instruction.type === 'TimelineAddEntries') {
-                    const entries = instruction.entries.find(e => e.entryId.includes('profile-grid'));
-                    if (entries) data_items_li = data_items_li.concat(entries.content.items.map(e => e.item.itemContent.tweet_results.result));
-                }
-                else if (instruction.type === 'TimelineAddToModule') {
-                    data_items_li = data_items_li.concat(instruction.moduleItems.map(e => e.item.itemContent.tweet_results.result));
-                }
-            });
+            const tweets = deep_search(json, 'result', 'Tweet');
+            data_tweet.push(...tweets);
+            console.debug('data_tweet', data_tweet);
             break;
         }
     }
-    console.debug('data_items_article', data_items_article);
-    console.debug('data_items_li', data_items_li);
+    console.debug('------------------------------');
 }
 
 (function override_xhr_send() {
@@ -157,7 +124,6 @@ function get_tweet_response_data(response) {
         return original_send.apply(this, arguments);
     };
 })();
-
 
 class TwitterMediaDownloader {
     constructor() {
@@ -498,7 +464,7 @@ class TwitterMediaDownloader {
         photo.parentNode.appendChild(button);
         button.onclick = (e) => {
             e.preventDefault();
-            this.onclick_download_button(button, status_id, index, data_items_article.find(e => e.rest_id === status_id || e.id_str === status_id));
+            this.onclick_download_button(button, status_id, index, data_tweet.find(e => e.rest_id === status_id || e.id_str === status_id));
         }
     }
 
@@ -509,9 +475,14 @@ class TwitterMediaDownloader {
         const status_id = li.querySelector('a[href*="/status/"]')?.href.split('/status/').pop().split('/').shift();
         const index = null;
 
+        const data = data_tweet.find(e => e?.rest_id === status_id);
+        if (!data) return;
+
+        if (data.legacy.full_text) node.title = `${data.legacy.full_text}\n${new Date(data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' })}`;
+
         const button_status = this.download_history.includes(status_id) ? this.download_button_status.completed : this.download_button_status.download;
         const button = this.create_download_button_on_image(this.selector.download_button_media_tab, button_status);
-        button.onclick = () => this.onclick_download_button(button, status_id, index, data_items_li.find(e => e.rest_id === status_id));
+        button.onclick = () => this.onclick_download_button(button, status_id, index, data);
         li.appendChild(button);
     }
 
@@ -542,7 +513,7 @@ class TwitterMediaDownloader {
         button_download.classList.add(this.selector.download_button_common);
         this.update_download_button(button_download, button_status);
         button_group.appendChild(button_download);
-        button_download.onclick = () => this.onclick_download_button(button_download, status_id, null, data_items_article.find(e => e.rest_id === status_id));
+        button_download.onclick = () => this.onclick_download_button(button_download, status_id, null, data_tweet.find(e => e.rest_id === status_id));
     }
 
     update_time_textContent(time) {
@@ -588,7 +559,7 @@ class TwitterMediaDownloader {
         const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
         if (!status_id) return;
 
-        const retweet_data = data_items_article.find(e => e.legacy?.retweeted_status_id_str === status_id || e.legacy?.retweeted_status_result?.result?.rest_id === status_id);
+        const retweet_data = data_tweet.find(e => e.legacy?.retweeted_status_id_str === status_id || e.legacy?.retweeted_status_result?.result?.rest_id === status_id);
         if (!retweet_data) return;
 
         const retweet_time = new Date(retweet_data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
@@ -683,13 +654,13 @@ class TwitterMediaDownloader {
         const [status_id, index] = photo.href.split('/status/').pop().split('/photo/');
         if (!status_id) return;
 
-        const json = data_items_li.find(e => e.rest_id === status_id) || data_items_article.find(e => e.rest_id === status_id || e.id_str === status_id);
+        const json = data_tweet.find(e => e.rest_id === status_id || e.id_str === status_id);
         if (!json) return;
 
         const media = json.legacy.extended_entities.media || json.legacy.entities.media;
         if (!media) return;
 
-        const photos = media.filter(e => e.type === 'photo').map(e => `${e.media_url_https}:orig`);
+        const photos = media.filter(e => e.type === 'photo').map(e => `${e.media_url_https.slice(0, e.media_url_https.lastIndexOf('.'))}?format=${e.media_url_https.split('.').pop()}&name=orig`);
         if (!photos) return;
 
         const info = {
@@ -807,23 +778,19 @@ class TwitterMediaDownloader {
 
     add_to_profile_join_time(node) {
         const timeline = node.parentElement;
-        const profile = timeline.querySelector('div:has(a[href*="/header_photo"]');
-        if (!profile) return;
 
-        const user_name = profile.querySelector('div[data-testid="UserName"]');
-        if (!user_name) return;
-
-        const screen_name = Array.from(user_name.querySelectorAll('span')).filter(e => e.textContent.includes('@')).map(e => e.textContent.replace('@', '')).pop();
+        const screen_name = timeline.querySelector('div[data-testid="UserName"] div[tabindex="-1"] span')?.textContent.replace('@', '');
         if (!screen_name) return;
 
-        const data = data_user_by_screen_name.find(e => e.core.screen_name.includes(screen_name));
+        const data = data_user_by_screen_name.find(e => e.core.screen_name === screen_name);
         if (!data) return;
 
-        const user_join_date = profile.querySelector('span[data-testid="UserJoinDate"]');
+        const user_join_date = timeline.querySelector('span[data-testid="UserJoinDate"] span');
         if (!user_join_date) return;
 
         const join_time = new Date(data.core.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
-        user_join_date.lastChild.textContent = `${user_join_date.textContent} (${join_time})`;
+
+        user_join_date.textContent = `${user_join_date.textContent.split(' (').shift()} (${join_time})`;
     }
 
     parsing_node(node) {
@@ -840,12 +807,21 @@ class TwitterMediaDownloader {
             this.add_to_article_download_button(node);
         }
         else if (node.tagName == 'SECTION') {
-            this.add_to_profile_join_time(node);
+            this.add_to_profile_join_time(node); // Must be here cause profile DOM loaded before 'UserByScreenName' response.
         }
     }
 
     observer_document() {
-        const observer = new MutationObserver((array) => { array.forEach((mutation_record) => { mutation_record.addedNodes.forEach((node) => { this.parsing_node(node); }); }); });
+        const ignore_target_tagName = ['HTML', 'HEAD', 'BODY', 'TITLE', 'SCRIPT', 'STYLE', 'FORM', 'BUTTON', 'svg', 'g'];
+        const observer = new MutationObserver((array) => {
+            const array_filter = array.filter(e => e.addedNodes.length).filter(e => !ignore_target_tagName.some(tag => e.target.tagName.includes(tag)));
+            array_filter.forEach((mutation_record) => {
+                // console.debug([mutation_record.target.tagName, ...Array.from(mutation_record.addedNodes).map(e => e.tagName)], mutation_record);
+                mutation_record.addedNodes.forEach((node) => {
+                    this.parsing_node(node);
+                });
+            });
+        });
         observer.observe(document, { attributes: false, childList: true, subtree: true });
     }
 }
