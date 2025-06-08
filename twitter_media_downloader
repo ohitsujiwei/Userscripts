@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.3.1
+// @version     3.3.2
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -79,10 +79,17 @@ function get_tweet_response_data(response) {
                 xhr_data_set[key] = {
                     rest_id: key,
                     legacy: value,
-                    core: { user_results: { result: { core: {
-                        name: json.globalObjects.users[value.user_id_str].name,
-                        screen_name: json.globalObjects.users[value.user_id_str].screen_name,
-                    }, }, }, },
+                    core: {
+                        user_results: {
+                            result: {
+                                core: {
+                                    created_at : json.globalObjects.users[value.user_id_str].created_at,
+                                    name: json.globalObjects.users[value.user_id_str].name,
+                                    screen_name: json.globalObjects.users[value.user_id_str].screen_name,
+                                },
+                            },
+                        },
+                    },
                 }
             });
             break;
@@ -94,10 +101,10 @@ function get_tweet_response_data(response) {
         case 'TweetDetail':
         case 'UserMedia': {
             deep_search(json);
-            console.debug('xhr_data_set', xhr_data_set);
             break;
         }
     }
+    console.debug('xhr_data_set', xhr_data_set);
 }
 
 (function override_xhr_send() {
@@ -545,7 +552,7 @@ class TwitterMediaDownloader {
         const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
         if (!status_id) return;
 
-        const retweet_data = xhr_data_set[status_id];
+        const retweet_data = Object.values(xhr_data_set).find(e => e.legacy.retweeted_status_result?.result?.rest_id === status_id);
         if (!retweet_data) return;
 
         const retweet_time = new Date(retweet_data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
@@ -753,7 +760,6 @@ class TwitterMediaDownloader {
 
             img.src = info.media[index] || '';
             img.onclick = (e) => {
-                span_index.textContent = `${index + 1} / ${info.media.length} (${img.naturalWidth}x${img.naturalHeight})`;
                 image_container.scroll({ top: img.offsetTop - image_top_offset});
             }
             img.onmouseover = (e) => {
