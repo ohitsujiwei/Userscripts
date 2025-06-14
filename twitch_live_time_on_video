@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       none
-// @version     1.0.12
+// @version     1.0.13
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -12,9 +12,6 @@
 'use strict';
 
 let global_span = null;
-function print(string) {
-    global_span ? global_span.textContent = '( ^)o(^ ) -> ' + string : console.log(string);
-}
 
 const selector = {
     head_microformat_video_release_date: 'meta[property="og:video:release_date"]',
@@ -23,7 +20,7 @@ const selector = {
     video: 'video[webkit-playsinline]',
     current_time: 'span.live-time > span, p[data-a-target="player-seekbar-current-time"]',
     duration: 'p[data-a-target="player-seekbar-duration"]',
-    viewer_count: 'p[data-a-target="animated-channel-viewers-count"]',
+    viewer_count: 'strong[data-a-target="animated-channel-viewers-count"]',
 
     player_control_left: '.player-controls__left-control-group',
     player_control_right: '.player-controls__right-control-group',
@@ -44,7 +41,36 @@ const selector = {
 };
 
 function add_style() {
+    const blacklist = [
+        'kyo1984123',
+        'shuteye_orange',
+        '',
+    ].map(e => `p[title*="${e}"]`).join(',');
+
     const css = `
+
+div[data-target="directory-container"] > div > div:has(${blacklist}) {
+    display: none;
+}
+
+section#browse-root-main-content div:has(h1),
+section#browse-root-main-content div:has(a[href*="/directory/gaming"]) {
+    display: none;
+}
+
+section#browse-root-main-content > div:nth-child(3) {
+    display: flex;
+    justify-content: flex-start !important;
+    padding-block-start: unset !important;
+}
+
+section#browse-root-main-content > div:nth-child(3) > div:nth-child(1) {
+    padding-block-end: unset !important;
+}
+
+a[data-a-target="preview-card-image-link"] > div > div:nth-child(2) {
+    display: none;
+}
 
 .live-time-on-video {
     z-index: 1;
@@ -56,7 +82,6 @@ function add_style() {
     font-family: system-ui;
     font-size: medium;
 }
-
 
 .button-on-video[checked] {
     border-color: #88D2FF !important;
@@ -113,26 +138,20 @@ class Formatter {
 }
 
 class Waitting {
-    static head(selector) {
-        print(`Watting.head('${selector}');`);
-        return this.promise(selector, document.head);
-    }
-    static body(selector) {
-        print(`Watting.body('${selector}');`);
-        return this.promise(selector, document.body);
-    }
-    static promise(selector, observe) {
+    static head = (selector) => { return this.promise(selector, document.head); }
+    static body = (selector) => { return this.promise(selector, document.body); }
+    static promise(selector, target) {
         const e = document.querySelector(selector);
         if (e) return new Promise((resolve) => { resolve(e); });
         return new Promise((resolve) => {
             const observer = new MutationObserver(() => {
-                const e = document.querySelector(selector);
+                const e = target.querySelector(selector);
                 if (e) {
                     observer.disconnect();
                     resolve(e);
                 }
             });
-            observer.observe(observe, { attributes: false, childList: true, subtree: true });
+            observer.observe(target, { attributes: false, childList: true, subtree: true });
         });
     }
 }
@@ -335,54 +354,49 @@ async function player_settings_process(objects) {
 }
 
 (async function main() {
-    try {
-        if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
-            add_style();
+    add_style();
+    if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
 
-            const objects = {
-                'video': null,
-                'span': null,
-                'current_time': null,
-                'duration': null,
-                'viewer_count': null,
-                'volume': null,
-                'microformat': null,
-                'quality': null,
-                'buffer': null,
-                'latency': null,
-                'latency_mode': null,
-                'live_clock_oberver': null,
-            };
-            objects.microformat = get_microformat();
+        const objects = {
+            'video': null,
+            'span': null,
+            'current_time': null,
+            'duration': null,
+            'viewer_count': null,
+            'volume': null,
+            'microformat': null,
+            'quality': null,
+            'buffer': null,
+            'latency': null,
+            'latency_mode': null,
+            'live_clock_oberver': null,
+        };
+        objects.microformat = get_microformat();
 
-            Waitting.body(selector.video).then((e) => {
-                objects.video = e;
-                objects.span = create_span('live-time-on-video', '( ^)o(^ )');
-                objects.video.before(objects.span);
-                global_span = objects.span;
-            });
+        Waitting.body(selector.video).then((e) => {
+            objects.video = e;
+            objects.span = create_span('live-time-on-video', '( ^)o(^ )');
+            objects.video.before(objects.span);
+            global_span = objects.span;
+        });
 
-            player_settings_process(objects);
+        player_settings_process(objects);
 
-            if (location.href.includes('/videos/')) {
-                Waitting.body(selector.duration).then((e) => { objects.duration = e; });
-            }
-            else {
-                Waitting.body(selector.viewer_count).then((e) => { objects.viewer_count = e; });
-            }
-            objects.current_time = await Waitting.body(selector.current_time);
-
-            objects.live_clock_oberver = new MutationObserver(() => { update_text_info_value(objects) });
-            objects.live_clock_oberver.observe(objects.current_time, { subtree:true, characterData:true });
-            // console.debug(objects);
-
-            // objects.video.ontimeupdate = () => { update_text_info_value(objects) };
-
-            // const video_container = await wait_element_body('[data-test-selector="video-player__video-container"]')
-            // video_container.addEventListener('wheel', (event) => { change_volume_on_wheel(event, video_container, volume) }, { passive: true })
+        if (location.href.includes('/videos/')) {
+            Waitting.body(selector.duration).then((e) => { objects.duration = e; });
         }
-    }
-    catch (e) {
-        console.log(e);
+        else {
+            Waitting.body(selector.viewer_count).then((e) => { objects.viewer_count = e; });
+        }
+        objects.current_time = await Waitting.body(selector.current_time);
+
+        objects.live_clock_oberver = new MutationObserver(() => { update_text_info_value(objects) });
+        objects.live_clock_oberver.observe(objects.current_time, { subtree:true, characterData:true });
+        // console.debug(objects);
+
+        // objects.video.ontimeupdate = () => { update_text_info_value(objects) };
+
+        // const video_container = await wait_element_body('[data-test-selector="video-player__video-container"]')
+        // video_container.addEventListener('wheel', (event) => { change_volume_on_wheel(event, video_container, volume) }, { passive: true })
     }
 })();
