@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Twitter Media Downloader V3
 // @description Violentmonkey Scripts
-// @version     3.3.3
+// @version     3.3.4
 // @author      Nekone
 // @match       https://x.com/*
 // @match       https://twitter.com/*
@@ -38,7 +38,7 @@ GM_addStyle(`
     border-radius: unset !important;
 `)
 
-const filename = '{user-id}-{status-id}';
+const file_name = '{user-id}-{status-id}';
 
 const xhr_api_keywords = [
     'UserByScreenName',
@@ -56,7 +56,7 @@ function deep_search(object) {
     function search(object) {
         if (!object || typeof object !== 'object') return;
         for (const key in object) {
-            if (object[key].rest_id) {
+            if (object[key].rest_id && object[key].legacy) {
                 xhr_data_set[object[key].rest_id] = object[key];
             }
             search(object[key]);
@@ -79,17 +79,11 @@ function get_tweet_response_data(response) {
                 xhr_data_set[key] = {
                     rest_id: key,
                     legacy: value,
-                    core: {
-                        user_results: {
-                            result: {
-                                core: {
-                                    created_at : json.globalObjects.users[value.user_id_str].created_at,
-                                    name: json.globalObjects.users[value.user_id_str].name,
-                                    screen_name: json.globalObjects.users[value.user_id_str].screen_name,
-                                },
-                            },
-                        },
-                    },
+                    core: { user_results: { result: { core: {
+                        created_at : json.globalObjects.users[value.user_id_str].created_at,
+                        name: json.globalObjects.users[value.user_id_str].name,
+                        screen_name: json.globalObjects.users[value.user_id_str].screen_name,
+                    }, }, }, },
                 }
             });
             break;
@@ -118,6 +112,114 @@ function get_tweet_response_data(response) {
         return original_send.apply(this, arguments);
     };
 })();
+
+class Downloader {
+    constructor() {
+        this.tasks = [];
+        this.thread = 0;
+        this.max_thread = 2;
+        this.retry = 0;
+        this.max_retry = 2;
+        this.failed = 0;
+        this.notifier;
+        this.has_failed = false;
+
+        console.debug(this);
+    }
+
+    add(task) {
+        this.tasks.push(task);
+        if (this.thread < this.max_thread) {
+            this.thread += 1;
+            this.next();
+        }
+        else {
+            this.update();
+        }
+    }
+
+    async next() {
+        let task = this.tasks.shift();
+        await this.start(task);
+        if (this.tasks.length > 0 && this.thread <= this.max_thread) {
+            this.next();
+        }
+        else {
+            this.thread -= 1;
+        }
+        this.update();
+    }
+
+    start(task) {
+        this.update();
+        return new Promise(resolve => {
+            GM_download({
+                url: task.url,
+                name: task.name,
+                onload: (result) => {
+                    task.onload();
+                    resolve();
+                },
+                onerror: (result) => {
+                    this.retry(task, result);
+                    resolve();
+                },
+                ontimeout: (result) => {
+                    this.retry(task, result);
+                    resolve();
+                }
+            });
+        });
+    }
+
+    retry(task, result) {
+        this.retry += 1;
+        if (this.retry == 3) {
+            this.max_thread = 1;
+        }
+        if (task.retry && task.retry >= this.max_retry || result.details && result.details.current == 'USER_CANCELED') {
+            task.onerror(result);
+            this.failed += 1;
+        }
+        else {
+            if (this.max_thread == 1) task.retry = (task.retry || 0) + 1;
+            this.add(task);
+        }
+    }
+
+    update() {
+        if (!this.notifier) {
+            this.notifier = document.createElement('div');
+            this.notifier.title = 'Twitter Media Downloader';
+            this.notifier.classList.add(`tmd-notifier`);
+            this.notifier.innerHTML = '<label>0</label>|<label>0</label>';
+            document.body.appendChild(this.notifier);
+        }
+        if (this.failed > 0 && !this.has_failed) {
+            this.has_failed = true;
+            this.notifier.innerHTML += '|';
+            let clear = document.createElement('label');
+            this.notifier.appendChild(clear);
+            clear.onclick = () => {
+                this.notifier.innerHTML = '<label>0</label>|<label>0</label>';
+                this.failed = 0;
+                this.has_failed = false;
+                this.update();
+            };
+        }
+        this.notifier.firstChild.innerText = this.thread;
+        this.notifier.firstChild.nextElementSibling.innerText = this.tasks.length;
+        if (this.failed > 0) {
+            this.notifier.lastChild.innerText = this.failed;
+        }
+        if (this.thread > 0 || this.tasks.length > 0 || this.failed > 0) {
+            this.notifier.classList.add('running');
+        }
+        else {
+            this.notifier.classList.remove('running');
+        }
+    }
+}
 
 class TwitterMediaDownloader {
     constructor() {
@@ -214,24 +316,7 @@ class TwitterMediaDownloader {
         this.download_history = null;
         this.update_download_history();
 
-        this.invalid_chars = {
-            '\\': '＼',
-            '\/': '／',
-            '\|': '｜',
-            '<': '＜',
-            '>': '＞',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '＂',
-            '\u200b': '',
-            '\u200c': '',
-            '\u200d': '',
-            '\u2060': '',
-            '\ufeff': '',
-            '🔞': ''
-        };
-        this.downloader = this.create_downloader();
+        this.downloader = new Downloader();
 
         this.time_split = '·';
         this.pixiv_html = (() => {
@@ -278,167 +363,47 @@ class TwitterMediaDownloader {
         }
     }
 
-    format_date (time_string, output, change_to_timezone) {
-        const date = new Date(time_string);
-        if (change_to_timezone) date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-        const month = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-        const result = {
-            YYYY: date.getUTCFullYear().toString(),
-            YY: date.getUTCFullYear().toString(),
-            MM: date.getUTCMonth() + 1,
-            MMM: month[date.getUTCMonth()],
-            DD: date.getUTCDate(),
-            hh: date.getUTCHours(),
-            mm: date.getUTCMinutes(),
-            ss: date.getUTCSeconds(),
-            h2: date.getUTCHours() % 12,
-            ap: date.getUTCHours() < 12 ? 'AM' : 'PM'
-        };
-        return output.replace(/(YY(YY)?|MMM?|DD|hh|mm|ss|h2|ap)/g, n => ('0' + result[n]).substr(-n.length));
-    }
-
     onclick_download_button(button, status_id, index, data) {
-        // console.debug(button);
-        // console.debug(status_id);
-        // console.debug(index);
-        // console.debug(data);
-        if (!data) {
-            this.update_download_button(button, this.download_button_status.failed);
-            return;
-        }
-
         if (button.classList.contains(this.download_button_status.loading)) return;
         this.update_download_button(button, this.download_button_status.loading);
 
+        if (!data) { this.update_download_button(button, this.download_button_status.failed); return; }
 
-        const out = GM_getValue('filename', filename).split('\n').join(''); // save_filename
-        const tweet = data.legacy;
-        const datetime = out.match(/{date-time(-local)?:[^{}]+}/) ? out.match(/{date-time(?:-local)?:([^{}]+)}/)[1].replace(/[\\/|<>*?:"]/g, v => this.invalid_chars[v]) : 'YYYYMMDD-hhmmss';
-        const info = {};
-        info['user-name'] = data.core.user_results.result.core.name.replace(/([\\/|*?:"]|[\u200b-\u200d\u2060\ufeff]|🔞)/g, v => this.invalid_chars[v]);
-        info['user-id'] = data.core.user_results.result.core.screen_name;
-        info['status-id'] = status_id;
-        info['date-time'] = this.format_date(tweet.created_at, datetime);
-        info['date-time-local'] = this.format_date(tweet.created_at, datetime, true);
-        info['full-text'] = tweet.full_text.split('\n').join(' ').replace(/\s*https:\/\/t\.co\/\w+/g, '').replace(/[\\/|<>*?:"]|[\u200b-\u200d\u2060\ufeff]/g, v => this.invalid_chars[v]);
+        const medias = index ? [data.legacy.extended_entities?.media?.[index - 1]] : data.legacy.extended_entities?.media;
+        if (!medias?.length) { this.update_download_button(button, this.download_button_status.failed); return; }
 
-        let medias = tweet.extended_entities && tweet.extended_entities.media;
-        if (index) medias = [medias[index - 1]];
+        let tasks = medias.length;
+        medias.forEach((media, i) => {
+            const download_info = {};
+            download_info.file_name = file_name;
+            download_info.date_time = Formatter.date(data.legacy.created_at, 'YYYYMMDD_hhmmss');
 
-        if (medias.length > 0) {
-            let tasks = medias.length;
-            const tasks_result = [];
-            medias.forEach((media, i) => {
-                info.url = media.type == 'photo' ? `${media.media_url_https}:orig` : media.video_info.variants.filter(n => n.content_type == 'video/mp4').sort((a, b) => b.bitrate - a.bitrate)[0].url;
-                info.file = info.url.split('/').pop().split(/[:?]/).shift();
-                info['file-name'] = info.file.split('.').shift();
-                info['file-ext'] = info.file.split('.').pop();
-                info['file-type'] = media.type.replace('animated_', '');
-                info.out = (out.replace(/\.?{file-ext}/, '') + ((medias.length > 1 || index) && !out.match('{file-name}') ? '-' + (index ? index - 1 : i) : '') + '.{file-ext}').replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => info[name]);
+            download_info['url'] = media.type == 'photo' ? `${media.media_url_https}:orig` : media.video_info.variants.filter(n => n.content_type == 'video/mp4').sort((a, b) => b.bitrate - a.bitrate)[0].url;
+            download_info['user-id'] = data.core.user_results.result.core.screen_name;
+            download_info['status-id'] = status_id;
+            download_info['ext'] = download_info['url'].split('.').pop().split(':').shift().split('?').shift();
 
-                this.downloader.add({
-                    url: info.url,
-                    name: info.out,
-                    onload: () => {
-                        tasks -= 1;
-                        tasks_result.push(((medias.length > 1 || index) ? (index ? index : i + 1) + ': ' : '') + this.download_button_title[this.download_button_status.completed]);
-                        this.update_download_button(button, null, tasks_result.sort().join('\n'));
-                        if (tasks === 0) {
-                            this.update_download_button(button, this.download_button_status.completed);
-                            this.update_download_history(status_id);
-                        }
-                    },
-                    onerror: result => {
-                        tasks = -1;
-                        tasks_result.push((medias.length > 1 ? i + 1 + ': ' : '') + result.details.current);
-                        this.update_download_button(button, this.download_button_status.failed, tasks_result.sort().join('\n'));
-                    }
-                });
+            download_info['output'] = `${download_info.file_name}-${index ? index-1 : i}.{ext}`.replace(/{([^{}:]+)(:[^{}]+)?}/g, (match, name) => download_info[name]);
 
+            console.debug(download_info);
+
+            this.downloader.add({
+                url: download_info.url,
+                name: download_info.output,
+                onload: () => {
+                    tasks -= 1;
+                    if (tasks !== 0) return;
+                    this.update_download_button(button, this.download_button_status.completed);
+                    if (index) return;
+                    this.update_download_history(status_id);
+                },
+                onerror: (result) => {
+                    tasks = -1;
+                    console.error(result);
+                    this.update_download_button(button, this.download_button_status.failed);
+                }
             });
-        }
-        else {
-            this.update_download_button(button, this.download_button_status.failed);
-        }
-    }
-
-    create_downloader() {
-        let tasks = [], thread = 0, max_thread = 2, retry = 0, max_retry = 2, failed = 0, notifier, has_failed = false;
-        return {
-            add: function (task) {
-                tasks.push(task);
-                if (thread < max_thread) {
-                    thread += 1;
-                    this.next();
-                } else this.update();
-            },
-            next: async function () {
-                let task = tasks.shift();
-                await this.start(task);
-                if (tasks.length > 0 && thread <= max_thread) this.next();
-                else thread -= 1;
-                this.update();
-            },
-            start: function (task) {
-                this.update();
-                return new Promise(resolve => {
-                    GM_download({
-                        url: task.url,
-                        name: task.name,
-                        onload: result => {
-                            task.onload();
-                            resolve();
-                        },
-                        onerror: result => {
-                            this.retry(task, result);
-                            resolve();
-                        },
-                        ontimeout: result => {
-                            this.retry(task, result);
-                            resolve();
-                        }
-                    });
-                });
-            },
-            retry: function (task, result) {
-                retry += 1;
-                if (retry == 3) max_thread = 1;
-                if (task.retry && task.retry >= max_retry ||
-                    result.details && result.details.current == 'USER_CANCELED') {
-                    task.onerror(result);
-                    failed += 1;
-                } else {
-                    if (max_thread == 1) task.retry = (task.retry || 0) + 1;
-                    this.add(task);
-                }
-            },
-            update: function () {
-                if (!notifier) {
-                    notifier = document.createElement('div');
-                    notifier.title = 'Twitter Media Downloader';
-                    notifier.classList.add(`tmd-notifier`);
-                    notifier.innerHTML = '<label>0</label>|<label>0</label>';
-                    document.body.appendChild(notifier);
-                }
-                if (failed > 0 && !has_failed) {
-                    has_failed = true;
-                    notifier.innerHTML += '|';
-                    let clear = document.createElement('label');
-                    notifier.appendChild(clear);
-                    clear.onclick = () => {
-                        notifier.innerHTML = '<label>0</label>|<label>0</label>';
-                        failed = 0;
-                        has_failed = false;
-                        this.update();
-                    };
-                }
-                notifier.firstChild.innerText = thread;
-                notifier.firstChild.nextElementSibling.innerText = tasks.length;
-                if (failed > 0) notifier.lastChild.innerText = failed;
-                if (thread > 0 || tasks.length > 0 || failed > 0) notifier.classList.add('running');
-                else notifier.classList.remove('running');
-            }
-        };
+        });
     }
 
     add_to_article_photo_download_button(node) {
@@ -471,7 +436,9 @@ class TwitterMediaDownloader {
         const data = xhr_data_set[status_id];
         if (!data) return;
 
-        if (data.legacy.full_text) node.title = `${data.legacy.full_text}\n${new Date(data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' })}`;
+        const sizes = data.legacy.extended_entities.media.map(e => `${e.original_info.width}x${e.original_info.height}`);
+
+        if (data.legacy.full_text) node.title = `${data.legacy.full_text}\n${new Date(data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' })}\n${sizes.join('\n')}`;
 
         const button_status = this.download_history.includes(status_id) ? this.download_button_status.completed : this.download_button_status.download;
         const button = this.create_download_button_on_image(this.selector.download_button_media_tab, button_status);
@@ -552,7 +519,10 @@ class TwitterMediaDownloader {
         const status_id = time.closest('a')?.href.split('/status/').pop().split('/').shift();
         if (!status_id) return;
 
-        const retweet_data = Object.values(xhr_data_set).find(e => e.legacy.retweeted_status_result?.result?.rest_id === status_id || e.legacy.retweeted_status_id_str === status_id);
+        const retweet_data = Object.values(xhr_data_set).find(e => e.legacy?.retweeted_status_result?.result?.rest_id === status_id || e.legacy?.retweeted_status_id_str === status_id);
+        // console.debug(time);
+        // console.debug(status_id);
+        // console.debug(retweet_data);
         if (!retweet_data) return;
 
         const retweet_time = new Date(retweet_data.legacy.created_at).toLocaleString('zh-tw', { hourCycle:'h24' });
@@ -814,6 +784,51 @@ class TwitterMediaDownloader {
             });
         });
         observer.observe(document, { attributes: false, childList: true, subtree: true });
+    }
+}
+
+class Formatter {
+    static abbr = {
+        month: { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' },
+        week: {
+            'en': { Sun: 'Sun', Mon: 'Mon', Tue: 'Tue', Wed: 'Wed', Thu: 'Thu', Fri: 'Fri', Sat: 'Sat', },
+            'zh-TW': { Sun: '日', Mon: '一', Tue: '二', Wed: '三', Thu: '四', Fri: '五', Sat: '六', },
+            'ja': { Sun: '日', Mon: '月', Tue: '火', Wed: '水', Thu: '木', Fri: '金', Sat: '土', },
+        }[navigator.language],
+    }
+
+    static two_digits(number) {
+        return number.toString().padStart(2, '0');
+    }
+
+    static time_from_seconds(seconds) {
+        const [s, m, h] = [seconds % 60, (seconds / 60) % 60, seconds / 3600].map((e) => Math.floor(e));
+        return h > 0 ? `${h}:${this.two_digits(m)}:${this.two_digits(s)}` : `${m}:${this.two_digits(s)}`;
+    }
+
+    static date (time, format, to_UTC) {
+        const date = new Date(time);
+        if (to_UTC) date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+        const [week, month, day, year, hour, minute, second] = date.toString().replaceAll(':', ' ').split(' ');
+        const result = {
+            YYYY: year,
+            YY: year.substr(-2),
+            MM: this.abbr.month[month],
+            DD: day,
+            hh: hour,
+            mm: minute,
+            ss: second,
+            h12: `${date.getHours() % 12}`.padStart(2, '0'),
+            ap: date.getHours() < 12 ? 'AM' : 'PM',
+            W: this.abbr.week[week],
+        };
+        return format.replace(/(YY(YY)?|MM(M)?|DD|W|hh|mm|ss|h12|ap)/g, e => result[e]);
+    }
+
+    static time_to_seconds(time) {
+        const [s, m, h] = time.split(':').reverse().map((e) => Math.abs(Number(e)));
+        const seconds = s + (m || 0) * 60 + (h || 0) * 3600;
+        return time[0] == '-' ? -seconds : seconds;
     }
 }
 
