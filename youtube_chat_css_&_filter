@@ -4,49 +4,121 @@
 // @match       https://www.youtube.com/*
 // @match       https://www.youtube.com/live_chat?*
 // @match       https://www.youtube.com/live_chat_replay?*
-// @grant       none
-// @version     1.0.0
+// @version     2.0.0
 // @author      Nekone
 // @description 2024/12/10 上午5:11:18
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
 // @grant       GM_addStyle
 // ==/UserScript==
 
-const USER_IMG_URL = [
-].map(e => `#img[src="${e}"]`).join(', ');
+'use strict';
 
-const EMOJI_LABEL = [
-    ':red_heart:',
-    ':orange_heart:',
-    ':yellow_heart:',
-    ':green_heart:',
-    ':blue_heart:',
-    ':purple_heart:',
-    ':brown_heart:',
-    ':black_heart:',
-    ':white_heart:',
-    ':clapping_hands:',
-].map(e => `[aria-label="${e}"]`).join(', ');
+const parameters = {
+    yt_live_chat_app: {
+        membership: 'membership',
+        // owner_moderator: 'owner-moderator',
+    },
+
+    chat_filter_button: {
+        id: 'chat-filter-button',
+        title: [
+            'No filter',
+            'Member / Owner / Moderator',
+            // 'Owner / Moderator',
+        ],
+        textContent: [
+            '☆',
+            '★',
+            // '❤',
+        ],
+    },
+
+    chat_history_div: {
+        id: 'chat-history-div',
+        title: 'Chat History',
+        style: `display: flex; flex-direction: column; overflow-y: scroll; max-height: 300px;`,
+    },
+
+    chat_history_button: {
+        id: 'chat-history-button',
+        title: 'Chat History',
+        textContent: ['♡', '❤'],
+    },
+
+    chat_histry_owner_badge: {
+        src: `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAxXpUWHRSYXcgcHJvZmlsZSB0eXBlIGV4aWYAAHjabVBbDsMgDPvnFDsCeQDJcejaSbvBjr9A0qpdZwljYmRC0vZ5v9JjAIETlyZVa80GVlbsJiQ7+mTIPHmCdw+u9XQYaCWynfwoNe7vdTgCfOumyilInmEsV0M58uUnKB6i0RGaWCNII4jQDYiA7t/KVaWdv7Bs+QrxlQbxgjOuRsjt3Gx6a7F3CHEjoGxMxN4AjVUSdRNtcrGLQGKaSSdDdGID+TenHekLYM1Z/Znoqq4AAAGEaUNDUElDQyBwcm9maWxlAAB4nH2RPUjDQBzFX1NLpVQc7CDikKE6tYuKOJYqFsFCaSu06mBy6Rc0aUhSXBwF14KDH4tVBxdnXR1cBUHwA8RdcFJ0kRL/lxRaxHhw3I939x537wChXWeqOZAAVM0ysqmkWCiuisFXBBFACHHEJGbq6dxiHp7j6x4+vt7FeZb3uT/HkFIyGeATiRNMNyziDeLZTUvnvE8cYVVJIT4njhl0QeJHrssuv3GuOCzwzIiRz84TR4jFSh/Lfcyqhko8QxxVVI3yhYLLCuctzmq9ybr35C8Ml7SVHNdpjiOFJaSRgQgZTdRQh0V91aCRYiJL+0kP/5jjz5BLJlcNjBwLaECF5PjB/+B3t2Z5espNCieBwIttf0wAwV2g07Lt72Pb7pwA/mfgSuv5G21g7pP0Vk+LHgHD28DFdU+T94DLHWD0SZcMyZH8NIVyGXg/o28qAiO3QGjN7a27j9MHIE9dLd8AB4fAZIWy1z3ePdjf279nuv39ANVOcs62mLEDAAANdmlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNC40LjAtRXhpdjIiPgogPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iCiAgICB4bWxuczpzdEV2dD0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL3NUeXBlL1Jlc291cmNlRXZlbnQjIgogICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIgogICAgeG1sbnM6R0lNUD0iaHR0cDovL3d3dy5naW1wLm9yZy94bXAvIgogICAgeG1sbnM6dGlmZj0iaHR0cDovL25zLmFkb2JlLmNvbS90aWZmLzEuMC8iCiAgICB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iCiAgIHhtcE1NOkRvY3VtZW50SUQ9ImdpbXA6ZG9jaWQ6Z2ltcDo3NGUyOThlMC0yNmNhLTQxODMtYjE1NS1jMzRhMTlkMDhiYTYiCiAgIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6YzAxZTJjM2UtOWNlYy00ODZiLWEyOTctMjY2OGYwYzVjNWRkIgogICB4bXBNTTpPcmlnaW5hbERvY3VtZW50SUQ9InhtcC5kaWQ6YjdjODJiODgtY2Y0ZS00OGNiLWJjNDEtZjNkM2Q5NTAxNzA1IgogICBkYzpGb3JtYXQ9ImltYWdlL3BuZyIKICAgR0lNUDpBUEk9IjIuMCIKICAgR0lNUDpQbGF0Zm9ybT0iV2luZG93cyIKICAgR0lNUDpUaW1lU3RhbXA9IjE3NTE3MTI1ODEyNDgzODkiCiAgIEdJTVA6VmVyc2lvbj0iMi4xMC4zNCIKICAgdGlmZjpPcmllbnRhdGlvbj0iMSIKICAgeG1wOkNyZWF0b3JUb29sPSJHSU1QIDIuMTAiCiAgIHhtcDpNZXRhZGF0YURhdGU9IjIwMjU6MDc6MDVUMTg6NDk6NDErMDg6MDAiCiAgIHhtcDpNb2RpZnlEYXRlPSIyMDI1OjA3OjA1VDE4OjQ5OjQxKzA4OjAwIj4KICAgPHhtcE1NOkhpc3Rvcnk+CiAgICA8cmRmOlNlcT4KICAgICA8cmRmOmxpCiAgICAgIHN0RXZ0OmFjdGlvbj0ic2F2ZWQiCiAgICAgIHN0RXZ0OmNoYW5nZWQ9Ii8iCiAgICAgIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5paWQ6ODVhZTE4ZGUtNjM3Zi00MjE1LTg4M2EtYmY4NWYxODNmZWE3IgogICAgICBzdEV2dDpzb2Z0d2FyZUFnZW50PSJHaW1wIDIuMTAgKFdpbmRvd3MpIgogICAgICBzdEV2dDp3aGVuPSIyMDI1LTA3LTA1VDE4OjQ5OjQxIi8+CiAgICA8L3JkZjpTZXE+CiAgIDwveG1wTU06SGlzdG9yeT4KICA8L3JkZjpEZXNjcmlwdGlvbj4KIDwvcmRmOlJERj4KPC94OnhtcG1ldGE+CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAKPD94cGFja2V0IGVuZD0idyI/Pg9GeG8AAAAGYktHRAAAAAAAAPlDu38AAAAJcEhZcwAALEsAACxLAaU9lqkAAAAHdElNRQfpBwUKMSnxGdbAAAAB3UlEQVR42u3cv2rCQBwH8O/pIoKQ3SXdJEv7CC2B26R0bt+gpV1cCnmHCHFO+wRCd6FPkOrmVvsKpbvXwVgaTUyiGE/v+4UfOBiFD78c3B8OWM8lgD6AGQBlSI1bQrwAsLEhVksI3yCU1GrX6z4Aaw0HwNh0nP8dlUBi52R2EkT83s3ApOWqHg/IF7RIzXcNwDkdMnMt4neOyUiNBAQiEIEIRCACEYhA+XGlxDAMoZQ6SA3DEG3HqRyp0Ox24HlKlww8r8qZ/XHhHAApZ13EcZSucaXcO1DuGBT0etoOoM/d7tbPulJiGkW7j0G6p2xHuFKqaRSVed4MoFUYAuXAGA+UB2MsUFEY44DKwhgDtC1MUaDcRfvFb5xuhBCczXO5g0AEIhCBCEQghkAEIhCBCEQgAhHoiPLwdLf3/ziJJdf7x9t9bRtx0R7c9iEQNw659XyshxdGQaAtzigItj73s4TaGciVUlugjm3zCJ72R/DAQ5zFv9yx7YOOScMwrORcIsrszXOyyhCIQAQiEIEIRCBzgb7IkJ6WEJMagDdSpOdHqYnA4kqud3Kk5mz5oQ9eqrRa/h/TTbPJK7qS9YHVe8xiJNM7aR53jrXpvbMBvGrSUfOK6hONhh+Px4n8AvAjNVmfJxkUAAAAAElFTkSuQmCC`,
+        style: `width: 16px; height: 16px; margin-left: 1px;`,
+    },
+
+    selector_chat_history_record_message: ':has([is-highlighted]), [author-type="owner"], [author-type="moderator"]',
+
+    enable: true,
+
+    user_img_url: [
+        'https://yt4.ggpht.com/ytc/AIdro_mY2GIot-ttB0jVusMCTiPVamZ-triaR-Z_1QG48fQYYv8=s32-c-k-c0x00ffffff-no-rj',
+        'https://yt4.ggpht.com/yti/ANjgQV-Njiqrr_BPzzBbAsiITk8QfA-JPEvkUyYOSVT-8hyqtLw=s32-c-k-c0x00ffffff-no-rj',
+    ].map(e => `#img[src="${e}"]`).join(','),
+    emoji_label: [
+        ':red_heart:',
+        ':orange_heart:',
+        ':yellow_heart:',
+        ':green_heart:',
+        ':blue_heart:',
+        ':purple_heart:',
+        ':brown_heart:',
+        ':black_heart:',
+        ':white_heart:',
+        ':clapping_hands:',
+    ].map(e => `[aria-label="${e}"]`).join(','),
+    membership_filter: [
+        '新會員',
+        '會員 (1 個月)',
+        '會員 (2 個月)',
+        '會員 (6 個月)',
+        '會員 (1 年)',
+        '會員 (2 年)',
+        '會員 (3 年)',
+        '會員 (4 年)',
+        '會員 (5 年)',
+    ].map(e => `[aria-label="${e}"]`).join(','),
+};
+
+/*
+yt-live-chat-app[${parameters.yt_live_chat_app.membership}] yt-live-chat-text-message-renderer:has(${parameters.membership_filter}) {
+    display: none !important;
+}
+*/
 
 GM_addStyle(`
 
+yt-live-chat-app[${parameters.yt_live_chat_app.owner_moderator}] yt-live-chat-text-message-renderer:not(.yt-live-chat-banner-renderer, :has([is-highlighted]), [author-type="owner"], [author-type="moderator"]),
+yt-live-chat-app[${parameters.yt_live_chat_app.membership}]      yt-live-chat-text-message-renderer:not(.yt-live-chat-banner-renderer, :has(yt-live-chat-author-badge-renderer, [is-highlighted]), [author-type="owner"]) {
+    display: none !important;
+}
+
+/* 重點聊天訊息 / 聊天室 - 重播熱門聊天室訊息 / 聊天重播 */
+yt-live-chat-app #trigger #label-text { font-size: 14px !important; }
+
+/* 頭號粉絲 */
+yt-live-chat-app #viewer-leaderboard-entry-point button {
+    .yt-spec-button-shape-next__button-text-content { display: none !important; }
+    .yt-spec-button-shape-next__icon { margin: unset !important; }
+}
+
+/* 取消留言較少時的慢速捲動 */
+yt-live-chat-app #items.yt-live-chat-item-list-renderer { transform: unset !important; }
+
 /* 當你傳送訊息時，其他人將得知你已訂閱此頻道。 */
-tp-yt-iron-dropdown:has(#content.yt-tooltip-renderer) {
-    display: none !important;
-}
+tp-yt-iron-dropdown:has(#content.yt-tooltip-renderer) { display: none !important; }
 
-yt-live-chat-placeholder-item-renderer {
-    display: none !important;
-}
+/* 不知為何出現這個，首次出現於スバル的直播 */
+yt-live-chat-placeholder-item-renderer { display: none !important; }
 
-yt-live-chat-app[member-only] yt-live-chat-text-message-renderer:not(:has(yt-live-chat-author-badge-renderer), .yt-live-chat-banner-renderer, [author-type="owner"]) {
-    display: none !important;
-}
-/* yt-live-chat-text-message-renderer:has([aria-label="新會員"])        { display: none !important; } */
-/* yt-live-chat-text-message-renderer:has([aria-label="會員 (1 個月)"]) { display: none !important; } */
 
+/* -------------------------------------------------- */
 yt-live-chat-app yt-live-chat-header-renderer {
-    #switch-button {
+    #${parameters.chat_history_button.id},
+    #${parameters.chat_filter_button.id} {
         background: none;
         border: none !important;
         border-radius: 50% !important;
@@ -56,28 +128,48 @@ yt-live-chat-app yt-live-chat-header-renderer {
         color: #F1F1F1 !important;
         cursor: pointer !important;
     }
-    #switch-button:hover {
+    #${parameters.chat_history_button.id}:hover,
+    #${parameters.chat_filter_button.id}:hover {
         background: #3F3F3F !important;
     }
 }
+yt-live-chat-app yt-live-chat-item-list-renderer {
+    #${parameters.chat_history_div.id} {
+        position: absolute;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        overflow-y: scroll;
+        max-height: 300px;
+        width: 100%;
 
-yt-live-chat-app yt-live-chat-text-message-renderer:has(${USER_IMG_URL})     { background-color: #FFA6EA !important; }
-yt-live-chat-app yt-live-chat-text-message-renderer:has([is-highlighted])    { background-color: #606060 !important; }
-yt-live-chat-app yt-live-chat-text-message-renderer[author-type="owner"]     { background-color: #FFD600 !important; }
-yt-live-chat-app yt-live-chat-text-message-renderer[author-type="moderator"] { background-color: #5E84F1 !important; }
+        yt-live-chat-text-message-renderer {
+            flex-shrink: 0;
+        }
+    }
+}
+/* -------------------------------------------------- */
 
-yt-live-chat-app yt-live-chat-text-message-renderer:has(${USER_IMG_URL})     :is(#timestamp, #author-name, #message),
-yt-live-chat-app yt-live-chat-text-message-renderer[author-type="owner"]     :is(#timestamp, #author-name, #message, [type="verified"]),
-yt-live-chat-app yt-live-chat-text-message-renderer[author-type="moderator"] :is(#timestamp, #author-name, #message, [type="verified"], [type="moderator"]) {
+
+
+yt-live-chat-app yt-live-chat-text-message-renderer:has(${parameters.user_img_url}) { background-color: #FFA6EA !important; }
+yt-live-chat-app yt-live-chat-text-message-renderer:has([is-highlighted])           { background-color: #606060 !important; }
+yt-live-chat-app yt-live-chat-text-message-renderer[author-type="owner"]            { background-color: #FFD600 !important; }
+yt-live-chat-app yt-live-chat-text-message-renderer[author-type="moderator"]        { background-color: #5E84F1 !important; }
+
+yt-live-chat-app yt-live-chat-text-message-renderer:has(${parameters.user_img_url}) :is(#timestamp, #author-name, #message),
+yt-live-chat-app yt-live-chat-text-message-renderer[author-type="owner"]            :is(#timestamp, #author-name, #message, [type="verified"]),
+yt-live-chat-app yt-live-chat-text-message-renderer[author-type="moderator"]        :is(#timestamp, #author-name, #message, [type="verified"], [type="moderator"]) {
     color: #000000 !important;
+    a { color: #000000 !important; }
 }
 yt-live-chat-app yt-live-chat-text-message-renderer:not([in-banner]) { padding: 4px 0px 4px 24px !important;}
-yt-live-chat-app yt-live-chat-text-message-renderer:not([in-banner]) #chat-badges { position: absolute !important; top: 8px !important; left: 1.5px !important; }
+yt-live-chat-app yt-live-chat-text-message-renderer:not([in-banner]) #chat-badges { position: absolute !important; top: 8px !important; left: 1px !important; }
 yt-live-chat-app yt-live-chat-text-message-renderer[whole-message-clickable] { cursor: unset !important; }
 yt-live-chat-app yt-live-chat-text-message-renderer :is(#timestamp, #author-photo) { margin-right: 4px !important; }
 yt-live-chat-app yt-live-chat-text-message-renderer #menu :is(#button, #interaction) { display: none !important; }
 
-yt-live-chat-app yt-live-chat-text-message-renderer:has(${USER_IMG_URL}) img { background: #0F0F0F; }
+yt-live-chat-app yt-live-chat-text-message-renderer:has(${parameters.user_img_url}) img { background: #0F0F0F; }
 /* yt-live-chat-app yt-live-chat-text-message-renderer:hover img { background: transparent; } */
 
 /* ---------- yt-live-chat-banner-renderer */
@@ -85,10 +177,14 @@ yt-live-chat-app yt-live-chat-banner-manager#live-chat-banner { padding: unset !
 /* yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer:has(yt-live-chat-text-message-renderer:has([is-highlighted]))     { background-color: #606060 !important; } */
 yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer:has(yt-live-chat-text-message-renderer[author-type="moderator"])  { background-color: #5E84F1 !important; }
 yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer:has(yt-live-chat-text-message-renderer[author-type="owner"])      { background-color: #FFD600 !important; }
-yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer:has(yt-live-chat-text-message-renderer[author-type="member"]) {
-    background-color: #2BA640 !important;
-    :is(#timestamp, #author-name, #message) { color: #000000 !important; }
+yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer:has(yt-live-chat-text-message-renderer[author-type="member"])     { background-color: #2BA640 !important; }
+
+yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer:has(yt-live-chat-text-message-renderer[author-type="member"]) :is(#timestamp, #author-name, #message) {
+    color: #000000 !important;
+    a { color: #000000 !important; }
 }
+
+
 yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer #header { display: none !important; }
 yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer #contents yt-live-chat-text-message-renderer { padding: unset !important; }
 yt-live-chat-app yt-live-chat-banner-manager yt-live-chat-banner-renderer #contents yt-live-chat-text-message-renderer #message { display: block !important; }
@@ -106,6 +202,8 @@ yt-live-chat-app ytd-sponsorships-live-chat-header-renderer #header yt-img-shado
 }
 
 /* Youtube Chat Input Renderer */
+
+[data-ytlstm-theater-mode] yt-live-chat-message-input-renderer,
 yt-live-chat-app yt-live-chat-message-input-renderer { padding: 4px !important; }
 yt-live-chat-app yt-live-chat-message-input-renderer #pickers { margin: 4px 0px 0px 0px !important; }
 
@@ -117,6 +215,9 @@ yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer #s
 }
 
 /* yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer#emoji { height: 210px !important; } */
+yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer {
+    height: 220px !important;
+}
 
 yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer yt-emoji-picker-category-renderer #emoji img,
 yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer yt-emoji-picker-upsell-category-renderer #emoji img {
@@ -129,7 +230,7 @@ yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer yt
 yt-live-chat-app yt-live-chat-message-input-renderer #picker-buttons,
 yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer #category-buttons,
 yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer #title,
-yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer yt-emoji-picker-category-renderer:not([id="search-category"], :has(#emoji.CATEGORY_TYPE_CUSTOM)) img:not(${EMOJI_LABEL}) {
+yt-live-chat-app yt-live-chat-message-input-renderer yt-emoji-picker-renderer yt-emoji-picker-category-renderer:not([id="search-category"], :has(#emoji.CATEGORY_TYPE_CUSTOM)) img:not(${parameters.emoji_label}) {
     display: none !important;
 }
 
@@ -144,49 +245,166 @@ yt-live-chat-app yt-live-chat-renderer #panel-pages #picker-buttons {
     display: none !important;
 }
 
-`)
+`);
 
-const css = `
+class Waiting {
+    static head = (selector) => { return this.promise(selector, document.head); }
+    static body = (selector) => { return this.promise(selector, document.body); }
+    static promise(selector, target, timeout=5000) {
+        return new Promise((resolve, reject) => {
+            const e = target.querySelector(selector);
+            if (e) return resolve(e);
 
+            const observer = new MutationObserver(() => {
+                const e = target.querySelector(selector);
+                if (e) {
+                    observer.disconnect();
+                    return resolve(e);
+                }
+            });
+            observer.observe(target, { attributes: false, childList: true, subtree: true });
 
+            setTimeout(() => {
+                observer.disconnect();
+                return reject(new Error(`${timeout} ms, Selector Not found = ${selector}`));
+            }, timeout);
+        });
+    }
+}
 
-`;
+function add_filter_button() {
+    Waiting.body('yt-live-chat-app').then((root) => {
+        const switch_button = document.createElement('button');
+        switch_button.id = parameters.chat_filter_button.id;
+        switch_button.title = parameters.chat_filter_button.title[0];
+        switch_button.textContent = parameters.chat_filter_button.textContent[0];
 
-function add_style() {
-    const style = document.createElement('style');
-    style.textContent = css;
-    document.head.appendChild(style);
+        const attributes = Object.values(parameters.yt_live_chat_app);
+        switch_button.addEventListener('click', () => {
+            const index = parameters.chat_filter_button.textContent.indexOf(switch_button.textContent);
+            index < attributes.length ? root.setAttribute(attributes[index], '') : attributes.forEach((e) => { root.removeAttribute(e) });
+            switch_button.textContent = parameters.chat_filter_button.textContent[(index + 1) % parameters.chat_filter_button.textContent.length];
+            switch_button.title = parameters.chat_filter_button.title[(index + 1) % parameters.chat_filter_button.title.length];
+        });
+
+        Waiting.body('#primary-content').then((e) => { e.after(switch_button); });
+
+        if (parameters.enable) switch_button.click();
+    });
+}
+
+function set_attributes(from, to) {
+    Object.values(from.attributes).forEach((node) => { to.setAttribute(node.nodeName, node.nodeValue)});
+}
+
+function add_broadcaster_badge(node) {
+    if (node.matches('[author-type="owner"]')) {
+        const span_badge = node.querySelector('span#chat-badges');
+        const img = document.createElement('img');
+        img.src = parameters.chat_histry_owner_badge.src;
+        img.style = parameters.chat_histry_owner_badge.style;
+        span_badge.appendChild(img);
+    }
+}
+
+function clone_yt_live_chat_text_message_renderer(parent, node) {
+    const clone = node.cloneNode(true);
+    parent.appendChild(clone);
+
+    // let _node, _clone;
+    setTimeout(() => {
+
+        Waiting.promise('#author-photo #img', node).then((e) => {
+            const c = clone.querySelector('#author-photo #img');
+            c.src = e.src;
+        });
+
+        // --------------------------------------------------
+
+        Waiting.promise('#content #timestamp', node).then((e) => {
+            const c = clone.querySelector('#content #timestamp');
+            c.textContent = e.textContent;
+        });
+
+        // --------------------------------------------------
+
+        Waiting.promise('#content yt-live-chat-author-chip', node).then((e) => {
+            const c = clone.querySelector('#content yt-live-chat-author-chip');
+            set_attributes(e, c);
+        });
+
+        Waiting.promise('#content yt-live-chat-author-chip #author-name', node).then((e) => {
+            const c = clone.querySelector('#content yt-live-chat-author-chip #author-name');
+            c.textContent = e.textContent;
+            set_attributes(e, c);
+        });
+
+        Waiting.promise('#content yt-live-chat-author-chip #author-name #chip-badges #image yt-icon span div', node).then((e) => {
+            const c = clone.querySelector('#content yt-live-chat-author-chip #author-name');
+            const svg = e.cloneNode(true);
+            svg.style = `width: 16px; height: 16px; vertical-align: sub; margin: 0px -2px 0px 2px; display: inline-block;`;
+            c.appendChild(svg);
+        }).catch((error) => { console.debug(error)});
+
+        Waiting.promise('#content yt-live-chat-author-chip #chat-badges #image yt-icon span div', node).then((e) => {
+            const c = clone.querySelector('#content yt-live-chat-author-chip #chat-badges');
+            const svg = e.cloneNode(true);
+            svg.style = `width: 16px; height: 16px; vertical-align: sub; margin: 0px 0px 0px 2px; display: block; color: #000000;`;
+            c.appendChild(svg);
+        }).catch((error) => { console.debug(error)});
+
+        // --------------------------------------------------
+
+        Waiting.promise('#content #message', node).then((e) => {
+            const c = clone.querySelector('#content #message');
+            c.after(e.cloneNode(true));
+            c.remove();
+        });
+
+        add_broadcaster_badge(clone);
+
+    }, 500);
+
+    add_broadcaster_badge(node);
+    // parent.appendChild(node);
+
+}
+
+function add_chat_history() {
+    const div = document.createElement('div');
+    div.id = parameters.chat_history_div.id;
+    div.style = parameters.chat_history_div.style;
+    Waiting.body('#item-scroller').then((e) => { e.before(div); });
+
+    Waiting.body('#items').then((target) => {
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (!node.matches(parameters.selector_chat_history_record_message)) return;
+                    if (div.matches(`:has([whole-message-clickable*="${node.wholeMessageClickable.liveChatItemContextMenuEndpoint.params}"])`)) return;
+
+                    clone_yt_live_chat_text_message_renderer(div, node);
+
+                });
+            })
+        });
+        observer.observe(target, { childList: true });
+    });
+
+    const b = document.createElement('button');
+    b.id = parameters.chat_history_button.id;
+    b.title = parameters.chat_history_button.title;
+    b.textContent = parameters.chat_history_button.textContent[1];
+    b.onclick = () => {
+        div.hasAttribute('hidden') ? div.removeAttribute('hidden') : div.setAttribute('hidden', '');
+        b.textContent = parameters.chat_history_button.textContent[div.hasAttribute('hidden') ? 0 : 1];
+    }
+    Waiting.body('#primary-content').then((e) => { e.after(b); });
 }
 
 (function main() {
     if (window.location.href.includes('https://www.youtube.com/live_chat')) {
-        // add_style();
-
-        const observer = new MutationObserver(function() {
-            const ytLiveChatApp = document.querySelector('yt-live-chat-app');
-            if (!ytLiveChatApp) return;
-            let switchButton = ytLiveChatApp.querySelector('#switch-button');
-            if (!switchButton) {
-                switchButton = document.createElement('button');
-                switchButton.setAttribute('id', 'switch-button');
-                switchButton.setAttribute('title', 'Member only');
-                switchButton.textContent = '☆';
-                switchButton.addEventListener('click', () => {
-                    if (ytLiveChatApp.hasAttribute('member-only')) {
-                        ytLiveChatApp.removeAttribute('member-only');
-                        switchButton.textContent = '☆';
-                    }
-                    else {
-                        ytLiveChatApp.setAttribute('member-only', '');
-                        switchButton.textContent = '★';
-                    }
-                })
-                ytLiveChatApp.querySelector('#primary-content').after(switchButton);
-            }
-            switchButton.click();
-            observer.disconnect();
-        })
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+        add_filter_button();
+        add_chat_history();
     }
 })();
-
