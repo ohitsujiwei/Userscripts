@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
 // @grant       GM_addStyle
-// @version     1.1.0
+// @version     1.1.1
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
@@ -80,6 +80,11 @@ div[data-a-target="player-controls"] [data-a-target="player-seekbar"] { position
 /* div[data-a-target="player-controls"] p[data-a-target*="player-seekbar-"] { text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; } */
 div[data-a-target="player-controls"] p[data-a-target*="player-seekbar-"] { display: none; }
 
+div.persistent-player:not([data-a-player-state="theatre"]) div[data-a-target="player-controls"][data-a-visible="false"] .live-time-on-video {
+    position: absolute;
+    top: -4px;
+    left: 4px;
+}
 .live-time-on-video {
     z-index: 1;
     pointer-events: none;
