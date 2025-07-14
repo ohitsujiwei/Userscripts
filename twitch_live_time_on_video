@@ -2,16 +2,14 @@
 // @name        Twitch Live Time On Video
 // @namespace   Violentmonkey Scripts
 // @match       https://www.twitch.tv/*
-// @grant       none
-// @version     1.0.13
+// @grant       GM_addStyle
+// @version     1.1.0
 // @author      Nekone
 // @description 2025/2/19 上午3:57:17
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=twitch.tv
 // ==/UserScript==
 
 'use strict';
-
-let global_span = null;
 
 const selector = {
     head_microformat_video_release_date: 'meta[property="og:video:release_date"]',
@@ -40,23 +38,14 @@ const selector = {
     player_settings_submenu_latency_mode_input: 'div[role="menuitemcheckbox"] input[data-a-target="tw-toggle"]', // to toggle the latency mode
 };
 
-function add_style() {
-    const blacklist = [
-        'kyo1984123',
-        'shuteye_orange',
-        '',
-    ].map(e => `p[title*="${e}"]`).join(',');
+const blacklist = [
+    'kyo1984123',
+    'shuteye_orange',
+    'kato_junichi0817',
+    '',
+].map(e => `p[title*="${e}"]`).join(',');
 
-    const css = `
-
-div[data-target="directory-container"] > div > div:has(${blacklist}) {
-    display: none;
-}
-
-section#browse-root-main-content div:has(h1),
-section#browse-root-main-content div:has(a[href*="/directory/gaming"]) {
-    display: none;
-}
+GM_addStyle(`
 
 section#browse-root-main-content > div:nth-child(3) {
     display: flex;
@@ -68,19 +57,36 @@ section#browse-root-main-content > div:nth-child(3) > div:nth-child(1) {
     padding-block-end: unset !important;
 }
 
-a[data-a-target="preview-card-image-link"] > div > div:nth-child(2) {
+section#browse-root-main-content div:has(h1),
+section#browse-root-main-content div:has(a[href*="/directory/gaming"]),
+a[data-a-target="preview-card-image-link"] > div > div:nth-child(2),
+div[data-target="directory-container"] > div > div:has(${blacklist}) {
     display: none;
 }
+
+div:has(> div[data-a-target="player-controls"]) { opacity: 1 !important; }
+
+div[data-a-target="player-controls"] { background: unset !important; }
+
+div.persistent-player:not([data-a-player-state="theatre"]) div[data-a-target="player-controls"][data-a-visible="false"] .player-controls__left-control-group :not(span) { display: none; }
+div.persistent-player:not([data-a-player-state="theatre"]) div[data-a-target="player-controls"][data-a-visible="false"] .player-controls__right-control-group * { display: none; }
+
+div.persistent-player:not([data-a-player-state="theatre"]) div[data-a-target="player-controls"][data-a-visible="false"] div[data-a-target="player-seekbar"] { display: none; }
+/* div.persistent-player:not([data-a-player-state="theatre"]) div[data-a-target="player-controls"][data-a-visible="false"] p[data-a-target*="player-seekbar-"] { display: none; } */
+
+div[data-a-target="player-controls"] .player-controls__left-control-group { width: 0; }
+div[data-a-target="player-controls"] .player-controls__left-control-group .volume-slider__slider-container[aria-hidden="true"] { width: 0.3rem !important; }
+div[data-a-target="player-controls"] [data-a-target="player-seekbar"] { position: relative; top: 5px; }
+/* div[data-a-target="player-controls"] p[data-a-target*="player-seekbar-"] { text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black; } */
+div[data-a-target="player-controls"] p[data-a-target*="player-seekbar-"] { display: none; }
 
 .live-time-on-video {
     z-index: 1;
     pointer-events: none;
-    position: absolute;
-    bottom: 0px;
-    left: 4px;
     text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
     font-family: system-ui;
     font-size: medium;
+    white-space: nowrap;
 }
 
 .button-on-video[checked] {
@@ -99,18 +105,11 @@ a[data-a-target="preview-card-image-link"] > div > div:nth-child(2) {
     border-color: #FFFFFF;
     background: rgba(0, 0, 0, 0.5);
     color: #FFFFFF;
+    font-size: 12px;
+    z-index: 2;
 }
 
-p[data-a-target*="player-seekbar"] {
-    text-shadow: 1px 0px 3px black, -1px 0px 3px black, 0px 1px 3px black, 0px -1px 3px black;
-}
-
-`;
-    const style = document.createElement('style');
-    style.setAttribute('id', 'twitch-live-time-on-video');
-    style.textContent = css;
-    document.head.appendChild(style);
-}
+`);
 
 class Formatter {
     static abbr = {
@@ -137,21 +136,27 @@ class Formatter {
     }
 }
 
-class Waitting {
+class QuerySelector {
     static head = (selector) => { return this.promise(selector, document.head); }
     static body = (selector) => { return this.promise(selector, document.body); }
-    static promise(selector, target) {
-        const e = document.querySelector(selector);
-        if (e) return new Promise((resolve) => { resolve(e); });
-        return new Promise((resolve) => {
+    static promise(selector, target, timeout=30000) {
+        return new Promise((resolve, reject) => {
+            const e = target.querySelector(selector);
+            if (e) return resolve(e);
+
             const observer = new MutationObserver(() => {
                 const e = target.querySelector(selector);
                 if (e) {
                     observer.disconnect();
-                    resolve(e);
+                    return resolve(e);
                 }
             });
             observer.observe(target, { attributes: false, childList: true, subtree: true });
+
+            setTimeout(() => {
+                observer.disconnect();
+                return reject(new Error(`${timeout} ms, Selector Not found = ${selector}`));
+            }, timeout);
         });
     }
 }
@@ -168,10 +173,7 @@ function create_span(selector, text, style) {
 }
 
 function get_video_buffer(video) {
-    let seconds = null;
-    try { seconds = (video.buffered.end(video.buffered.length - 1) - video.currentTime); }
-    catch (e) { seconds = 0; }
-    finally { return seconds; }
+    return !video || video.buffered.length == 0 ? 0 : video.buffered.end(video.buffered.length - 1) - video.currentTime;
 }
 
 function get_microformat() {
@@ -199,18 +201,22 @@ function get_microformat() {
     return microformat;
 }
 
+const text_mapping = {
+    '低延遲': 'Low',
+    '一般延遲': 'Normal',
+}
 const text_info_value = {};
 function update_text_info_value(objects) {
     text_info_value['time-current'] = objects.current_time?.textContent || '';
     // text_info_value['time-current'] = Formatter.time_from_seconds((Date.now() - new Date(objects.microformat.publication.startDate)) / 1000);
     text_info_value['time-separator'] = objects.duration ? '/' : '';
     text_info_value['time-duration'] = objects.duration?.textContent || '';
-    text_info_value['status-buffer-health'] = `(B/${objects.buffer ? objects.buffer?.textContent : get_video_buffer(objects.video).toFixed(2)})`;
-    text_info_value['status-latency'] = objects.latency ? `(L/${objects.latency?.textContent}/${objects.latency_mode?.textContent})` : '';
+    text_info_value['status-buffer-health'] = `(B/${objects.buffer ? objects.buffer?.textContent.match(/\d+(\.\d+)?/)[0] : get_video_buffer(objects.video).toFixed(2)})`;
+    text_info_value['status-latency'] = objects.latency ? `(L/${objects.latency?.textContent.match(/\d+(\.\d+)?/)[0]}/${text_mapping[objects.latency_mode?.textContent]})` : '';
     text_info_value['status-view-count'] = objects.viewer_count ? `(V/${objects.viewer_count.textContent})` : '';
     text_info_value['time-date'] = objects.duration ? `(${Formatter.date(objects.microformat?.publication.startDate || '', Formatter.time_to_seconds(objects.current_time?.textContent))})` : '';
     text_info_value['time-now'] = `[${Date().toString().split(' ')[4]}]`;
-    text_info_value['video-status'] = `(${objects.video.playbackRate.toFixed(2)}x/${objects.video.muted ? '0%' : `${Math.round(objects.video.volume*100)}%`}${objects.quality ? `/${objects.quality}` : ''})`;
+    text_info_value['video-status'] = `(${objects.video?.playbackRate.toFixed(2)}x/${objects.video?.muted ? '0%' : `${Math.round(objects.video?.volume*100)}%`}${objects.quality ? `/${objects.quality}` : ''})`;
 
     objects.span.textContent = Object.values(text_info_value).join(' ');
 }
@@ -232,21 +238,21 @@ async function player_settings_process(objects) {
     }
 
     async function add_quality_button_on_control(control) {
-        await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
-        await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
-        await Waitting.body(selector.player_settings_menu_item_quality).then((b) => { b.click(); });
-        await Waitting.body(selector.player_settings_menu_quality_options).then(async (div) => {
+        await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
+        await QuerySelector.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+        await QuerySelector.body(selector.player_settings_menu_item_quality).then((b) => { b.click(); });
+        await QuerySelector.body(selector.player_settings_menu_quality_options).then(async (div) => {
             const options = div.querySelectorAll(selector.player_settings_submenu_quality_option);
             options.forEach((submenu, index) => {
                 if (index != 1 && index != options.length - 1) return;
                 const input = submenu.querySelector('input');
                 const label = submenu.querySelector('label').textContent.split(' ')[0].split('(')[0];
                 const button = add_button(control, 'button-on-video', 'quality', label, async () => {
-                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
-                    await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
-                    await Waitting.body(selector.player_settings_menu_item_quality).then((b) => { b.click(); });
-                    await Waitting.body(selector.player_settings_menu_quality_options).then((div) => { div.childNodes[index].click(); });
-                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+                    await QuerySelector.body(selector.player_settings_menu_item_quality).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_menu_quality_options).then((div) => { div.childNodes[index].click(); });
+                    await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
                     control.querySelectorAll('#quality.button-on-video').forEach((b) => { b.removeAttribute('checked'); });
                     button.setAttribute('checked', '');
                     objects.quality = label;
@@ -257,7 +263,7 @@ async function player_settings_process(objects) {
                 };
             });
         });
-        await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+        await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
     }
 
     async function add_stats_button_on_control(control) {
@@ -265,19 +271,19 @@ async function player_settings_process(objects) {
             if (!document.querySelector(selector.player_overlay_video_stats)) { button.textContent = 'Stats/Disable'; }
             switch (button.textContent) {
                 case 'Stats/Hide': {
-                    await Waitting.body(selector.player_overlay_video_stats).then((div) => { div.style.display = ''; });
+                    await QuerySelector.body(selector.player_overlay_video_stats).then((div) => { div.style.display = ''; });
                     button.setAttribute('checked', '');
                     button.textContent = 'Stats/Enable';
                     break;
                 }
                 case 'Stats/Enable': {
-                    await Waitting.body(selector.player_settings_button).then((b) => {
+                    await QuerySelector.body(selector.player_settings_button).then((b) => {
                         b.click();
                     });
-                    await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
-                    await Waitting.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
-                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((i) => { i.click(); });
-                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+                    await QuerySelector.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_submenu_advanced_video_stats_input).then((i) => { i.click(); });
+                    await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
                     objects.buffer = null;
                     objects.latency = null;
                     objects.latency_mode = null;
@@ -286,19 +292,19 @@ async function player_settings_process(objects) {
                     break;
                 }
                 case 'Stats/Disable': {
-                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
-                    await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
-                    await Waitting.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
-                    await Waitting.body(selector.player_settings_submenu_advanced_video_stats_input).then((i) => { i.click(); });
-                    await Waitting.body(selector.player_overlay_video_stats).then(async (div) => {
+                    await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+                    await QuerySelector.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_submenu_advanced_video_stats_input).then((i) => { i.click(); });
+                    await QuerySelector.body(selector.player_overlay_video_stats).then(async (div) => {
                         div.style.display = 'none';
-                        objects.buffer = await Waitting.body(selector.video_stats_buffer);
+                        objects.buffer = await QuerySelector.body(selector.video_stats_buffer);
                         if (!location.href.includes('/videos/')) {
-                            objects.latency = await Waitting.body(selector.video_stats_latency);
-                            objects.latency_mode = await Waitting.body(selector.video_stats_latency_mode);
+                            objects.latency = await QuerySelector.body(selector.video_stats_latency);
+                            objects.latency_mode = await QuerySelector.body(selector.video_stats_latency_mode);
                         }
                     });
-                    await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+                    await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
                     button.setAttribute('checked', '');
                     button.textContent = 'Stats/Hide';
                     break;
@@ -306,24 +312,24 @@ async function player_settings_process(objects) {
             }
         });
         button.click();
-        await Waitting.body(selector.player_overlay_video_stats);
+        await QuerySelector.body(selector.player_overlay_video_stats);
     }
 
     async function add_latency_mode_toggle_button_on_control(control) {
         let write_text_once = true;
         const button = add_button(control, 'button-on-video', 'latency-mode', 'Latency', async () => {
-            await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
-            await Waitting.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
-            await Waitting.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
-            await Waitting.body(selector.player_settings_submenu_latency_mode_input).then((i) => {
+            await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
+            await QuerySelector.body(selector.player_settings_root).then((r) => { r.style.display = 'none'; });
+            await QuerySelector.body(selector.player_settings_menu_item_advanced).then((b) => { b.click(); });
+            await QuerySelector.body(selector.player_settings_submenu_latency_mode_input).then((i) => {
                 if (!write_text_once) i.click();
                 button.textContent = `Latency/${i.checked ? 'Low' : 'Normal'}`;
                 write_text_once = false;
             });
-            await Waitting.body(selector.player_settings_button).then((b) => { b.click(); });
+            await QuerySelector.body(selector.player_settings_button).then((b) => { b.click(); });
         });
         button.click();
-        await Waitting.body(selector.player_settings_submenu_latency_mode_input);
+        await QuerySelector.body(selector.player_settings_submenu_latency_mode_input);
     }
 
     async function add_live_clock_reload_button_on_control(control) {
@@ -342,21 +348,19 @@ async function player_settings_process(objects) {
         });
     }
 
-    Waitting.body(selector.player_control_right).then(async (control) => {
+    QuerySelector.body(selector.player_control_right).then(async (control) => {
         await add_quality_button_on_control(control);
         await add_stats_button_on_control(control);
         await add_latency_mode_toggle_button_on_control(control);
-        await add_live_clock_reload_button_on_control(control);
+        // await add_live_clock_reload_button_on_control(control);
     });
 
-    // Waitting.body(selector.player_control_left).then(async (control) => {
+    // QuerySelector.body(selector.player_control_left).then(async (control) => {
     // });
 }
 
-(async function main() {
-    add_style();
+(function main() {
     if (['www.twitch.tv', '/directory', '/all'].some(e => !location.href.includes(e))) {
-
         const objects = {
             'video': null,
             'span': null,
@@ -371,32 +375,29 @@ async function player_settings_process(objects) {
             'latency_mode': null,
             'live_clock_oberver': null,
         };
+
         objects.microformat = get_microformat();
 
-        Waitting.body(selector.video).then((e) => {
-            objects.video = e;
-            objects.span = create_span('live-time-on-video', '( ^)o(^ )');
-            objects.video.before(objects.span);
-            global_span = objects.span;
-        });
+        // objects.video = await QuerySelector.body(selector.video);
+        QuerySelector.body(selector.video).then((e) => { objects.video = e; });
+
+        objects.span = create_span('live-time-on-video', '( ^)o(^ )');
+        QuerySelector.body(selector.player_control_left).then((e) => { e.appendChild(objects.span); });
 
         player_settings_process(objects);
 
         if (location.href.includes('/videos/')) {
-            Waitting.body(selector.duration).then((e) => { objects.duration = e; });
+            QuerySelector.body(selector.duration).then((e) => { objects.duration = e; });
         }
         else {
-            Waitting.body(selector.viewer_count).then((e) => { objects.viewer_count = e; });
+            QuerySelector.body(selector.viewer_count).then((e) => { objects.viewer_count = e; });
         }
-        objects.current_time = await Waitting.body(selector.current_time);
+        // objects.current_time = await QuerySelector.body(selector.current_time);
+        QuerySelector.body(selector.current_time).then((e) => {
+            objects.current_time = e;
+            objects.live_clock_oberver = new MutationObserver(() => { update_text_info_value(objects) });
+            objects.live_clock_oberver.observe(objects.current_time, { subtree:true, characterData:true });
+        });
 
-        objects.live_clock_oberver = new MutationObserver(() => { update_text_info_value(objects) });
-        objects.live_clock_oberver.observe(objects.current_time, { subtree:true, characterData:true });
-        // console.debug(objects);
-
-        // objects.video.ontimeupdate = () => { update_text_info_value(objects) };
-
-        // const video_container = await wait_element_body('[data-test-selector="video-player__video-container"]')
-        // video_container.addEventListener('wheel', (event) => { change_volume_on_wheel(event, video_container, volume) }, { passive: true })
     }
 })();
