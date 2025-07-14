@@ -4,7 +4,7 @@
 // @match       https://www.youtube.com/*
 // @match       https://www.youtube.com/live_chat?*
 // @match       https://www.youtube.com/live_chat_replay?*
-// @version     2.0.0
+// @version     2.0.1
 // @author      Nekone
 // @description 2024/12/10 上午5:11:18
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=youtube.com
@@ -92,7 +92,7 @@ yt-live-chat-app[${parameters.yt_live_chat_app.membership}] yt-live-chat-text-me
 GM_addStyle(`
 
 yt-live-chat-app[${parameters.yt_live_chat_app.owner_moderator}] yt-live-chat-text-message-renderer:not(.yt-live-chat-banner-renderer, :has([is-highlighted]), [author-type="owner"], [author-type="moderator"]),
-yt-live-chat-app[${parameters.yt_live_chat_app.membership}]      yt-live-chat-text-message-renderer:not(.yt-live-chat-banner-renderer, :has(yt-live-chat-author-badge-renderer, [is-highlighted]), [author-type="owner"]) {
+yt-live-chat-app[${parameters.yt_live_chat_app.membership}]      yt-live-chat-text-message-renderer:not(.yt-live-chat-banner-renderer, :has(yt-live-chat-author-badge-renderer, [is-highlighted]), [author-type="owner"], [author-type="moderator"]) {
     display: none !important;
 }
 
@@ -133,7 +133,7 @@ yt-live-chat-app yt-live-chat-header-renderer {
         background: #3F3F3F !important;
     }
 }
-yt-live-chat-app yt-live-chat-item-list-renderer {
+yt-live-chat-app #chat {
     #${parameters.chat_history_div.id} {
         position: absolute;
         z-index: 9999;
@@ -247,7 +247,7 @@ yt-live-chat-app yt-live-chat-renderer #panel-pages #picker-buttons {
 
 `);
 
-class Waiting {
+class QuerySelector {
     static head = (selector) => { return this.promise(selector, document.head); }
     static body = (selector) => { return this.promise(selector, document.body); }
     static promise(selector, target, timeout=5000) {
@@ -273,7 +273,7 @@ class Waiting {
 }
 
 function add_filter_button() {
-    Waiting.body('yt-live-chat-app').then((root) => {
+    QuerySelector.body('yt-live-chat-app').then((root) => {
         const switch_button = document.createElement('button');
         switch_button.id = parameters.chat_filter_button.id;
         switch_button.title = parameters.chat_filter_button.title[0];
@@ -287,7 +287,7 @@ function add_filter_button() {
             switch_button.title = parameters.chat_filter_button.title[(index + 1) % parameters.chat_filter_button.title.length];
         });
 
-        Waiting.body('#primary-content').then((e) => { e.after(switch_button); });
+        QuerySelector.body('#primary-content').then((e) => { e.after(switch_button); });
 
         if (parameters.enable) switch_button.click();
     });
@@ -311,42 +311,41 @@ function clone_yt_live_chat_text_message_renderer(parent, node) {
     const clone = node.cloneNode(true);
     parent.appendChild(clone);
 
-    // let _node, _clone;
     setTimeout(() => {
 
-        Waiting.promise('#author-photo #img', node).then((e) => {
+        QuerySelector.promise('#author-photo #img', node).then((e) => {
             const c = clone.querySelector('#author-photo #img');
             c.src = e.src;
         });
 
         // --------------------------------------------------
 
-        Waiting.promise('#content #timestamp', node).then((e) => {
+        QuerySelector.promise('#content #timestamp', node).then((e) => {
             const c = clone.querySelector('#content #timestamp');
             c.textContent = e.textContent;
         });
 
         // --------------------------------------------------
 
-        Waiting.promise('#content yt-live-chat-author-chip', node).then((e) => {
+        QuerySelector.promise('#content yt-live-chat-author-chip', node).then((e) => {
             const c = clone.querySelector('#content yt-live-chat-author-chip');
             set_attributes(e, c);
         });
 
-        Waiting.promise('#content yt-live-chat-author-chip #author-name', node).then((e) => {
+        QuerySelector.promise('#content yt-live-chat-author-chip #author-name', node).then((e) => {
             const c = clone.querySelector('#content yt-live-chat-author-chip #author-name');
             c.textContent = e.textContent;
             set_attributes(e, c);
         });
 
-        Waiting.promise('#content yt-live-chat-author-chip #author-name #chip-badges #image yt-icon span div', node).then((e) => {
+        QuerySelector.promise('#content yt-live-chat-author-chip #author-name #chip-badges #image yt-icon span div', node).then((e) => {
             const c = clone.querySelector('#content yt-live-chat-author-chip #author-name');
             const svg = e.cloneNode(true);
             svg.style = `width: 16px; height: 16px; vertical-align: sub; margin: 0px -2px 0px 2px; display: inline-block;`;
             c.appendChild(svg);
         }).catch((error) => { console.debug(error)});
 
-        Waiting.promise('#content yt-live-chat-author-chip #chat-badges #image yt-icon span div', node).then((e) => {
+        QuerySelector.promise('#content yt-live-chat-author-chip #chat-badges #image yt-icon span div', node).then((e) => {
             const c = clone.querySelector('#content yt-live-chat-author-chip #chat-badges');
             const svg = e.cloneNode(true);
             svg.style = `width: 16px; height: 16px; vertical-align: sub; margin: 0px 0px 0px 2px; display: block; color: #000000;`;
@@ -355,7 +354,7 @@ function clone_yt_live_chat_text_message_renderer(parent, node) {
 
         // --------------------------------------------------
 
-        Waiting.promise('#content #message', node).then((e) => {
+        QuerySelector.promise('#content #message', node).then((e) => {
             const c = clone.querySelector('#content #message');
             c.after(e.cloneNode(true));
             c.remove();
@@ -374,9 +373,9 @@ function add_chat_history() {
     const div = document.createElement('div');
     div.id = parameters.chat_history_div.id;
     div.style = parameters.chat_history_div.style;
-    Waiting.body('#item-scroller').then((e) => { e.before(div); });
+    QuerySelector.body('#item-list').then((e) => { e.before(div); });
 
-    Waiting.body('#items').then((target) => {
+    QuerySelector.body('#items').then((target) => {
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 mutation.addedNodes.forEach((node) => {
@@ -399,7 +398,7 @@ function add_chat_history() {
         div.hasAttribute('hidden') ? div.removeAttribute('hidden') : div.setAttribute('hidden', '');
         b.textContent = parameters.chat_history_button.textContent[div.hasAttribute('hidden') ? 0 : 1];
     }
-    Waiting.body('#primary-content').then((e) => { e.after(b); });
+    QuerySelector.body('#primary-content').then((e) => { e.after(b); });
 }
 
 (function main() {
